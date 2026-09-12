@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "KPN TV+ RTL AdSkip & Unblocker",
+  "version": "2.1.0",
+  "description": "Deblokkeert doorspoelen en slaat RTL reclames op KPN TV+ in 1 sprong over.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "*://*.tv.kpn.com/*",
+    "https://tv.kpn.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.tv.kpn.com/*",
+        "https://tv.kpn.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "KPN TV+ RTL AdSkip",
+    "default_popup": "popup.html"
+  }
+}
