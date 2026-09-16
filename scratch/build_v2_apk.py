@@ -67,6 +67,31 @@ def patch_adskip_hook():
         f.write(smali)
     print("Saved AdSkipHook.smali to:", hook_path)
 
+def patch_main_activity():
+    print(">>> Patching MainActivity.smali (guaranteed startup AdSkipHook hook)...")
+    path = os.path.join(DECOMPILED, "smali_classes3", "com", "kpn", "tvplusapp", "MainActivity.smali")
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    if "AdSkipHook" in content:
+        print("MainActivity.smali already patched")
+        return
+
+    target = ".method public final onCreate(Landroid/os/Bundle;)V\n    .locals 4"
+    assert target in content, "Could not find onCreate in MainActivity.smali"
+
+    injection = target + """
+
+    # === KPN TV+ AdSkip Hook: load at startup + register this Activity ===
+    const-string v0, "MainActivity.onCreate"
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V
+    invoke-static {p0}, Lsoftware/morphe/kpn/AdSkipHook;->registerActivity(Landroid/app/Activity;)V"""
+
+    content = content.replace(target, injection, 1)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("Patched MainActivity.smali")
+
 def patch_videoplayer():
     print(">>> Patching VideoPlayer.smali (registerPlayer hook)...")
     vp_path = os.path.join(DECOMPILED, "smali_classes3", "io", "flutter", "plugins", "videoplayer", "VideoPlayer.smali")
@@ -458,6 +483,7 @@ def rebuild_and_sign():
 
 def main():
     patch_adskip_hook()
+    patch_main_activity()
     patch_videoplayer()
     patch_exoplayer_event_listener()
     patch_flutter_security_checker()
