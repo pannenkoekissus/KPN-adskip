@@ -41,6 +41,43 @@ public class AdSkipHook {
     private static View overlayView = null;
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
 
+    static {
+        try {
+            Thread.UncaughtExceptionHandler defaultHandler = Thread.getDefaultUncaughtExceptionHandler();
+            Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+                java.io.StringWriter sw = new java.io.StringWriter();
+                throwable.printStackTrace(new java.io.PrintWriter(sw));
+                log("FATAL_CRASH: " + sw.toString());
+                if (defaultHandler != null) {
+                    defaultHandler.uncaughtException(thread, throwable);
+                }
+            });
+            log("AdSkipHook initialized - Crash logger active");
+        } catch (Throwable t) {
+            android.util.Log.e(TAG, "Failed to init crash handler: " + t.getMessage());
+        }
+    }
+
+    /**
+     * Writes debug log directly to /sdcard/Download/kpn_debug.log
+     */
+    public static void log(String msg) {
+        android.util.Log.e(TAG, msg);
+        try {
+            java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS
+            );
+            if (downloadDir != null && downloadDir.exists()) {
+                java.io.File logFile = new java.io.File(downloadDir, "kpn_debug.log");
+                java.io.FileWriter fw = new java.io.FileWriter(logFile, true);
+                String timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US).format(new java.util.Date());
+                fw.write(timestamp + " | " + msg + "\n");
+                fw.flush();
+                fw.close();
+            }
+        } catch (Throwable ignored) {}
+    }
+
     /**
      * Called whenever VideoPlayer is initialized or seeks in Flutter
      */
