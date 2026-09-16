@@ -78,13 +78,25 @@ def patch_videoplayer():
         replacement = """.method public seekTo(J)V
     .locals 1
 
-    # === KPN TV+ AdSkip Hook: register active player ===
-    invoke-static {p0}, Lsoftware/morphe/kpn/AdSkipHook;->registerPlayer(Ljava/lang/Object;)V"""
+    # === KPN TV+ AdSkip Hook: register active player + log seek target ===
+    invoke-static {p0}, Lsoftware/morphe/kpn/AdSkipHook;->registerPlayer(Ljava/lang/Object;)V
+    invoke-static {p1, p2}, Lsoftware/morphe/kpn/AdSkipHook;->registerSeek(J)V"""
         assert target in content, "Could not find seekTo in VideoPlayer.smali"
         content = content.replace(target, replacement)
         with open(vp_path, "w", encoding="utf-8") as f:
             f.write(content)
         print("Patched VideoPlayer.smali")
+    elif "registerSeek" not in content:
+        # Upgrade an older AdSkipHook patch so seek targets are logged too
+        content = content.replace(
+            "invoke-static {p0}, Lsoftware/morphe/kpn/AdSkipHook;->registerPlayer(Ljava/lang/Object;)V",
+            "invoke-static {p0}, Lsoftware/morphe/kpn/AdSkipHook;->registerPlayer(Ljava/lang/Object;)V\n"
+            "    invoke-static {p1, p2}, Lsoftware/morphe/kpn/AdSkipHook;->registerSeek(J)V",
+            1,
+        )
+        with open(vp_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print("Upgraded existing VideoPlayer.smali patch with registerSeek")
     else:
         print("VideoPlayer.smali already patched")
 
@@ -95,10 +107,31 @@ def patch_exoplayer_event_listener():
         content = f.read()
 
     if "AdSkipHook" not in content:
-        target = ".method public onPlayerError(LA0/C;)V\n    .locals 3"
-        replacement = """.method public onPlayerError(LA0/C;)V
-    .locals 3
+        # The error parameter type (e.g. LA0/C;) changes per app build, so
+        # locate onPlayerError by method name instead of hardcoding the type.
+        import re as _re
+        m = _re.search(r'\.method public onPlayerError\(L([^;]+;)V', content)
+        if not m:
+            print("WARNING: onPlayerError(L...) not found in ExoPlayerEventListener.smali, skipping")
+            return
 
+        target = ".method public onPlayerError(L%s)V" % m.group(1)
+
+        # Find the .locals / .registers line that follows the method header
+        reg_m = _re.search(_re.escape(target) + r'\n(\s*(\.locals|\.registers) (\d+))', content)
+        if not reg_m:
+            print("WARNING: could not find locals/registers line after onPlayerError, skipping")
+            return
+
+        old_line, kind, count = reg_m.group(1), reg_m.group(2), int(reg_m.group(3))
+
+        # The injected block uses v0..v2 (3 locals). For .registers, `this` +
+        # the error param take 2 register slots.
+        injected_locals = 3
+        new_count = max(count, injected_locals if kind == ".locals" else injected_locals + 2)
+        new_line = ".%s %d" % (kind, new_count)
+
+        injection = """
     # Log error to /sdcard/Download/kpn_debug.log
     invoke-static {p1}, Ljava/lang/String;->valueOf(Ljava/lang/Object;)Ljava/lang/String;
     move-result-object v0
@@ -109,59 +142,52 @@ def patch_exoplayer_event_listener():
     invoke-virtual {v1}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
     move-result-object v0
     invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V"""
-        assert target in content, "Could not find onPlayerError in ExoPlayerEventListener.smali"
-        content = content.replace(target, replacement)
+
+        content = content.replace(target + "\n" + old_line, target + "\n" + new_line + injection, 1)
         with open(ep_path, "w", encoding="utf-8") as f:
             f.write(content)
         print("Patched ExoPlayerEventListener.smali")
     else:
         print("ExoPlayerEventListener.smali already patched")
-
 def patch_flutter_security_checker():
     print(">>> Patching flutter_security_checker (r8.1/b.smali)...")
     path = os.path.join(DECOMPILED, "smali_classes3", "r8.1", "b.smali")
     with open(path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # 1. hasCorrectlyInstalled -> return true
-    pattern1 = r'(:cond_6\s+const-string v0, "hasCorrectlyInstalled"[\s\S]*?:cond_7\s+)'
-    sub1 = r'''\1# Security bypass: hasCorrectlyInstalled -> TRUE
-    const/4 p1, 0x1
+    patched = []
+    targets = (
+        ("Security bypass: hasCorrectlyInstalled -> TRUE",
+         r'(:cond_6\s+(?:\.line \d+\s+)*const-string v0, "hasCorrectlyInstalled"[\s\S]*?:cond_7\s+)',
+         "const/4 p1, 0x1"),
+        ("Security bypass: isRooted -> FALSE",
+         r'(:cond_0\s+(?:\.line \d+\s+)*const-string v0, "isRooted"[\s\S]*?if-eqz p1, :cond_c\s+)',
+         "const/4 p1, 0x0"),
+        ("Security bypass: isRealDevice -> TRUE",
+         r'(:cond_1\s+(?:\.line \d+\s+)*const-string v0, "isRealDevice"[\s\S]*?if-nez p1, :cond_2\s+)',
+         "const/4 p1, 0x1"),
+    )
+    for marker, pattern, value in targets:
+        if marker in content:
+            continue
+        sub = r'''\1# %s
+    %s
     invoke-static {p1}, Ljava/lang/Boolean;->valueOf(Z)Ljava/lang/Boolean;
     move-result-object p1
     invoke-interface {p2, p1}, Lio/flutter/plugin/common/MethodChannel$Result;->success(Ljava/lang/Object;)V
     return-void
 
-    '''
-    content = re.sub(pattern1, sub1, content)
-
-    # 2. isRooted -> return false
-    pattern2 = r'(:cond_0\s+const-string v0, "isRooted"[\s\S]*?if-eqz p1, :cond_c\s+)'
-    sub2 = r'''\1# Security bypass: isRooted -> FALSE
-    const/4 p1, 0x0
-    invoke-static {p1}, Ljava/lang/Boolean;->valueOf(Z)Ljava/lang/Boolean;
-    move-result-object p1
-    invoke-interface {p2, p1}, Lio/flutter/plugin/common/MethodChannel$Result;->success(Ljava/lang/Object;)V
-    return-void
-
-    '''
-    content = re.sub(pattern2, sub2, content)
-
-    # 3. isRealDevice -> return true
-    pattern3 = r'(:cond_1\s+const-string v0, "isRealDevice"[\s\S]*?if-nez p1, :cond_2\s+)'
-    sub3 = r'''\1# Security bypass: isRealDevice -> TRUE
-    const/4 p1, 0x1
-    invoke-static {p1}, Ljava/lang/Boolean;->valueOf(Z)Ljava/lang/Boolean;
-    move-result-object p1
-    invoke-interface {p2, p1}, Lio/flutter/plugin/common/MethodChannel$Result;->success(Ljava/lang/Object;)V
-    return-void
-
-    '''
-    content = re.sub(pattern3, sub3, content)
+    ''' % (marker, value)
+        new_content = re.sub(pattern, sub, content)
+        if new_content == content:
+            print("  WARNING: pattern not matched for %s" % marker)
+        else:
+            content = new_content
+            patched.append(marker)
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
-    print("Patched flutter_security_checker (r8.1/b.smali)")
+    print("Patched flutter_security_checker (r8.1/b.smali): %s" % (", ".join(patched) if patched else "already up to date"))
 
 def patch_safe_device():
     print(">>> Patching safe_device (z8.1/b.smali)...")
@@ -169,57 +195,49 @@ def patch_safe_device():
     with open(path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # 1. isJailBroken -> return false
-    pattern1 = r'(:cond_0\s+const-string v2, "isJailBroken"[\s\S]*?if-eqz v1, :cond_1\s+)'
-    sub1 = r'''\1# SafeDevice bypass: isJailBroken -> FALSE
-    const/4 p1, 0x0
+    # Tolerant matching: in the decompiled smali there can be an intervening
+    # `.line N` marker / iget-object between the `:cond_X` label and the
+    # const-string, so anchor on the const-string and the handler's start
+    # condition rather than the label. The `\1` capture preserves the original
+    # matched block; the bypass is inserted right after the handler condition
+    # (e.g. `if-eqz v1, :cond_1`) so other dispatches stay intact.
+    patched = []
+    targets = (
+        ("SafeDevice bypass: isJailBroken -> FALSE",
+         r'(const-string v2, "isJailBroken"[\s\S]*?if-eqz v1, :cond_1\s+)',
+         "const/4 p1, 0x0"),
+        ("SafeDevice bypass: isRealDevice -> TRUE",
+         r'(const-string v2, "isRealDevice"[\s\S]*?if-eqz v1, :cond_a\s+)',
+         "const/4 p1, 0x1"),
+        ("SafeDevice bypass: isDevelopmentModeEnable -> FALSE",
+         r'(const-string v4, "isDevelopmentModeEnable"[\s\S]*?if-eqz v1, :cond_\w+\s+)',
+         "const/4 p1, 0x0"),
+        ("SafeDevice bypass: usbDebuggingCheck -> FALSE",
+         r'(const-string v4, "usbDebuggingCheck"[\s\S]*?if-eqz v1, :cond_\w+\s+)',
+         "const/4 p1, 0x0"),
+    )
+    for marker, pattern, value in targets:
+        if marker in content:
+            print("  SKIP (already present): %s" % marker)
+            continue
+        sub = r'''\1# %s
+    %s
     invoke-static {p1}, Ljava/lang/Boolean;->valueOf(Z)Ljava/lang/Boolean;
     move-result-object p1
     invoke-interface {p2, p1}, Lio/flutter/plugin/common/MethodChannel$Result;->success(Ljava/lang/Object;)V
     return-void
 
-    '''
-    content = re.sub(pattern1, sub1, content)
-
-    # 2. isRealDevice -> return true
-    pattern2 = r'(:cond_1\s+const-string v2, "isRealDevice"[\s\S]*?if-eqz v1, :cond_\w+\s+)'
-    sub2 = r'''\1# SafeDevice bypass: isRealDevice -> TRUE
-    const/4 p1, 0x1
-    invoke-static {p1}, Ljava/lang/Boolean;->valueOf(Z)Ljava/lang/Boolean;
-    move-result-object p1
-    invoke-interface {p2, p1}, Lio/flutter/plugin/common/MethodChannel$Result;->success(Ljava/lang/Object;)V
-    return-void
-
-    '''
-    content = re.sub(pattern2, sub2, content)
-
-    # 3. isDevelopmentModeEnable -> return false
-    pattern3 = r'(const-string v4, "isDevelopmentModeEnable"[\s\S]*?if-eqz v1, :cond_\w+\s+)'
-    sub3 = r'''\1# SafeDevice bypass: isDevelopmentModeEnable -> FALSE
-    const/4 p1, 0x0
-    invoke-static {p1}, Ljava/lang/Boolean;->valueOf(Z)Ljava/lang/Boolean;
-    move-result-object p1
-    invoke-interface {p2, p1}, Lio/flutter/plugin/common/MethodChannel$Result;->success(Ljava/lang/Object;)V
-    return-void
-
-    '''
-    content = re.sub(pattern3, sub3, content)
-
-    # 4. usbDebuggingCheck -> return false
-    pattern4 = r'(const-string v4, "usbDebuggingCheck"[\s\S]*?if-eqz v1, :cond_\w+\s+)'
-    sub4 = r'''\1# SafeDevice bypass: usbDebuggingCheck -> FALSE
-    const/4 p1, 0x0
-    invoke-static {p1}, Ljava/lang/Boolean;->valueOf(Z)Ljava/lang/Boolean;
-    move-result-object p1
-    invoke-interface {p2, p1}, Lio/flutter/plugin/common/MethodChannel$Result;->success(Ljava/lang/Object;)V
-    return-void
-
-    '''
-    content = re.sub(pattern4, sub4, content)
+    ''' % (marker, value)
+        new_content = re.sub(pattern, sub, content)
+        if new_content == content:
+            print("  WARNING: pattern not matched for %s" % marker)
+        else:
+            content = new_content
+            patched.append(marker)
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
-    print("Patched safe_device (z8.1/b.smali)")
+    print("Patched safe_device (z8.1/b.smali): %s" % (", ".join(patched) if patched else "already up to date"))
 
 def inject_native_libs_and_config():
     print(">>> Injecting native libraries & configuring apktool.yml...")
@@ -274,8 +292,33 @@ def merge_resources():
 def patch_manifest():
     print(">>> Patching AndroidManifest.xml...")
     manifest_path = os.path.join(DECOMPILED, "AndroidManifest.xml")
-    with open(manifest_path, "r", encoding="utf-8") as f:
-        content = f.read()
+
+    # A previous apktool b may have overwritten the text manifest with binary
+    # AXML. Detect and re-decode from base.apk if so.
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        # Verify it's actual XML (not binary)
+        if not content.lstrip().startswith("<?xml") and not content.lstrip().startswith("<"):
+            raise UnicodeDecodeError("not xml", b"", 0, 1, "")
+    except (UnicodeDecodeError, UnicodeError):
+        print("  Manifest is binary AXML (from prior apktool b). Re-decoding...")
+        tmp_decode = os.path.join(WORK_DIR, "_manifest_tmp")
+        if os.path.exists(tmp_decode):
+            shutil.rmtree(tmp_decode)
+        base_apk = os.path.join(WORK_DIR, "base.apk")
+        cmd = [JAVA, "-jar", APKTOOL, "d", base_apk, "-o", tmp_decode, "-f", "-s"]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            print("  WARNING: apktool decode failed, using nl_decompiled manifest as fallback")
+            fallback = os.path.join(WORK_DIR, "nl_decompiled", "AndroidManifest.xml")
+            shutil.copy2(fallback, manifest_path)
+        else:
+            shutil.copy2(os.path.join(tmp_decode, "AndroidManifest.xml"), manifest_path)
+            shutil.rmtree(tmp_decode)
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        print("  Restored text manifest from base.apk")
 
     content = re.sub(r'\s*android:requiredSplitTypes="[^"]*"', '', content)
     content = re.sub(r'\s*android:splitTypes="[^"]*"', '', content)
@@ -305,21 +348,113 @@ def rebuild_and_sign():
     assert res.returncode == 0, f"apktool failed with code {res.returncode}"
     print(f"Built unsigned APK ({os.path.getsize(UNSIGNED_APK)} bytes)")
 
-    print(">>> Signing APK with uber-apk-signer...")
+    print(">>> Applying known-good manifest & signing (uber-apk-signer)...")
+    # apktool's re-encoded AndroidManifest.xml is unparseable by both uber-apk-signer
+    # ("malformed binary resource") and the device (INSTALL_FAILED_INVALID_APK).
+    # Swap in a known-good binary manifest from an earlier verified build.
+    good_manifest = None
+    candidates = [
+        os.path.join(WORK_DIR, "kpn-tvplus-adskip-standalone-unsigned.apk"),
+        os.path.join(WORK_DIR, "test_smali_build.apk"),
+        os.path.join(OUTPUT_DIR, "kpn-tvplus-adskip-standalone-aligned-debugSigned.apk"),
+        os.path.join(WORK_DIR, "kpn-tvplus-adskip-standalone.apk"),
+    ]
+    for cand in candidates:
+        if not os.path.exists(cand):
+            continue
+        try:
+            with zipfile.ZipFile(cand) as z:
+                data = z.read("AndroidManifest.xml")
+            if data and not data.lstrip().startswith(b"<"):
+                good_manifest = data
+                print(f"  Using known-good manifest from {os.path.basename(cand)}")
+                break
+        except Exception:
+            continue
+    assert good_manifest is not None, "No known-good binary manifest found!"
+
+    # Rebuild unsigned APK with the good manifest (drop any old META-INF)
+    tmp_apk = UNSIGNED_APK + ".reman"
+    with zipfile.ZipFile(UNSIGNED_APK, "r") as zin:
+        with zipfile.ZipFile(tmp_apk, "w") as zout:
+            for item in zin.infolist():
+                if item.filename.startswith("META-INF/"):
+                    continue
+                data = zin.read(item.filename)
+                if item.filename == "AndroidManifest.xml":
+                    data = good_manifest
+                zout.writestr(item, data)
+    os.replace(tmp_apk, UNSIGNED_APK)
+    print(f"  Swapped AndroidManifest.xml ({len(good_manifest)} bytes)")
+
+    jarsigner = os.path.join(os.path.dirname(JAVA), "jarsigner.exe")
+    keytool = os.path.join(os.path.dirname(JAVA), "keytool.exe")
+    debug_ks = os.path.expanduser(r"~\.android\debug.keystore")
+    if not os.path.exists(debug_ks):
+        ks_dir = os.path.dirname(debug_ks)
+        os.makedirs(ks_dir, exist_ok=True)
+        subprocess.run([keytool, "-genkeypair", "-v",
+            "-keystore", debug_ks, "-storepass", "android",
+            "-alias", "androiddebugkey", "-keypass", "android",
+            "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
+            "-dname", "CN=Android Debug,O=Android,C=US"],
+            capture_output=True)
+
+    # Sign with uber-apk-signer (v1+v2+v3 + zipalign) - the recipe that worked
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     cmd = [JAVA, "-jar", SIGNER, "-a", UNSIGNED_APK, "-o", OUTPUT_DIR, "--allowResign"]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.stdout:
         print(res.stdout[-1500:])
     if res.stderr:
         print("STDERR:", res.stderr[-1500:])
-    assert res.returncode == 0, f"uber-apk-signer failed with code {res.returncode}"
 
-    # Copy to user-friendly name
-    signed_name = os.path.join(OUTPUT_DIR, "kpn-tvplus-adskip-v2-unsigned-aligned-debugSigned.apk")
     final_name = os.path.join(OUTPUT_DIR, "kpn-tvplus-adskip-standalone.apk")
-    if os.path.exists(signed_name):
+    signed_name = os.path.join(OUTPUT_DIR, "kpn-tvplus-adskip-v2-aligned-debugSigned.apk")
+    backup_name = os.path.join(WORK_DIR, "kpn-tvplus-adskip-standalone.apk")
+    uber_ok = res.returncode == 0 and os.path.exists(signed_name)
+
+    if uber_ok:
         shutil.copy2(signed_name, final_name)
+        print("  Signed with uber-apk-signer (v1+v2+v3, zipaligned)")
+    else:
+        print("  uber-apk-signer failed, falling back to jarsigner (v1)...")
+        signed_jar = UNSIGNED_APK.replace("-unsigned.apk", "-signed.jar")
+        shutil.copy2(UNSIGNED_APK, signed_jar)
+        res = subprocess.run([jarsigner, "-sigalg", "SHA256withRSA",
+            "-digestalg", "SHA-256", "-keystore", debug_ks,
+            "-storepass", "android", "-keypass", "android",
+            signed_jar, "androiddebugkey"],
+            capture_output=True, text=True)
+        if res.stderr:
+            print("jarsigner:", res.stderr[-500:])
+        assert res.returncode == 0, f"jarsigner failed: {res.stderr[-300:]}"
+        shutil.copy2(signed_jar, final_name)
+        os.remove(signed_jar)
+        print("  Signed with jarsigner (v1)")
+
+    shutil.copy2(final_name, backup_name)
+    if os.path.exists(final_name):
         print(f"SUCCESS! Output: {final_name} ({os.path.getsize(final_name)} bytes)")
+        print(f"Backup copy: {backup_name} ({os.path.getsize(backup_name)} bytes)")
+        bad_entry = None
+        try:
+            with zipfile.ZipFile(final_name) as z:
+                bad_entry = z.testzip()
+            if bad_entry is None:
+                print("  zip integrity: OK")
+            else:
+                print(f"  zip integrity: CORRUPT at {bad_entry}")
+        except Exception as e:
+            print(f"  zip integrity: FAILED ({e})")
+        res = subprocess.run([jarsigner, "-verify", final_name], capture_output=True, text=True)
+        output_check = (res.stdout + res.stderr).lower()
+        if res.returncode == 0 and "jar verified" in output_check:
+            print("  signature: VALID")
+        else:
+            print("  signature: (v2/v3 scheme - not checked by jarsigner)")
+    else:
+        print(f"ERROR: signed APK missing at {final_name} - check antivirus quarantine")
 
 def main():
     patch_adskip_hook()

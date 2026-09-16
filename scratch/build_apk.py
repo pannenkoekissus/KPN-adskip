@@ -124,6 +124,7 @@ def step4_patch_videoplayer():
             patched.append("")
             patched.append("    # === KPN TV+ AdSkip Hook: register active player ===")
             patched.append("    invoke-static {p0}, Lsoftware/morphe/kpn/AdSkipHook;->registerPlayer(Ljava/lang/Object;)V")
+            patched.append("    invoke-static {p1, p2}, Lsoftware/morphe/kpn/AdSkipHook;->registerSeek(J)V")
             patched.append("")
             injected = True
 

@@ -59,23 +59,79 @@ public class AdSkipHook {
     }
 
     /**
-     * Writes debug log directly to /sdcard/Download/kpn_debug.log
+     * Writes debug log to logcat + Download folder.
+     *
+     * On Android 10+ (targetSdk 30+) a direct FileWriter to /sdcard/Download is blocked
+     * by scoped storage, so we use MediaStore.Downloads which is always allowed.
+     * A copy is also written to the app-specific external dir as a fallback
+     * (adb-accessible, permission-free).
      */
     public static void log(String msg) {
         android.util.Log.e(TAG, msg);
         try {
-            java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(
-                    android.os.Environment.DIRECTORY_DOWNLOADS
-            );
-            if (downloadDir != null && downloadDir.exists()) {
-                java.io.File logFile = new java.io.File(downloadDir, "kpn_debug.log");
-                java.io.FileWriter fw = new java.io.FileWriter(logFile, true);
-                String timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US).format(new java.util.Date());
-                fw.write(timestamp + " | " + msg + "\n");
-                fw.flush();
-                fw.close();
+            android.content.Context app = null;
+            try {
+                app = android.app.ActivityThread.currentApplication();
+            } catch (Throwable ignored) {}
+
+            if (app == null) {
+                // Fallback: legacy direct write (pre-Android 10)
+                appendToFile(new java.io.File("/sdcard/Download/kpn_debug.log"), msg);
+                return;
+            }
+
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                appendViaMediaStore(app, msg);
+            } else {
+                appendToFile(new java.io.File("/sdcard/Download/kpn_debug.log"), msg);
+            }
+
+            // Always: app-specific external dir (scoped-storage safe)
+            java.io.File extDir = app.getExternalFilesDir(null);
+            if (extDir != null) {
+                appendToFile(new java.io.File(extDir, "kpn_debug.log"), msg);
             }
         } catch (Throwable ignored) {}
+    }
+
+    private static void appendViaMediaStore(android.content.Context app, String msg) {
+        try {
+            android.net.Uri uri = mediaStoreUri;
+            if (uri == null) {
+                android.content.ContentValues cv = new android.content.ContentValues();
+                cv.put("_display_name", "kpn_debug.log");
+                cv.put("mime_type", "text/plain");
+                cv.put("relative_path", "Download/");
+                uri = app.getContentResolver().insert(
+                        android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
+                if (uri == null) return;
+                mediaStoreUri = uri;
+            }
+            java.io.OutputStream os = app.getContentResolver().openOutputStream(uri, "wa");
+            if (os == null) return;
+            os.write((msg + "\n").getBytes("UTF-8"));
+            os.flush();
+            os.close();
+        } catch (Throwable ignored) {}
+    }
+
+    private static void appendToFile(java.io.File file, String msg) {
+        try {
+            java.io.FileWriter fw = new java.io.FileWriter(file, true);
+            String timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US).format(new java.util.Date());
+            fw.write(timestamp + " | " + msg + "\n");
+            fw.flush();
+            fw.close();
+        } catch (Throwable ignored) {}
+    }
+
+    private static android.net.Uri mediaStoreUri;
+
+    /**
+     * Called from VideoPlayer.seekTo(J) to log the target position
+     */
+    public static void registerSeek(long targetMs) {
+        log("VIDEOPLAYER seekTo target=" + targetMs + "ms");
     }
 
     /**
@@ -84,6 +140,7 @@ public class AdSkipHook {
     public static void registerPlayer(Object videoPlayer) {
         if (videoPlayer != null) {
             activeVideoPlayerRef = new WeakReference<>(videoPlayer);
+            log("registerPlayer: " + videoPlayer.getClass().getName());
         }
     }
 
@@ -118,6 +175,7 @@ public class AdSkipHook {
             }
 
             previousPositionMs = current;
+            log("seek to " + target + "ms (was " + current + "ms)");
             seekMethod.invoke(playerObj, target);
 
             String dir = deltaMs > 0 ? "+" : "";
@@ -162,6 +220,8 @@ public class AdSkipHook {
         if (event.getAction() != KeyEvent.ACTION_DOWN) {
             return false;
         }
+
+        log("onKeyDown code=" + keyCode);
 
         switch (keyCode) {
             case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
@@ -208,6 +268,7 @@ public class AdSkipHook {
             field.setAccessible(true);
             return field.get(vp);
         } catch (Throwable t) {
+            log("getExoPlayer: 'exoPlayer' field not found, scanning fields...");
             // Fallback: search for any field assignable to Player / ExoPlayer
             for (Field f : vp.getClass().getDeclaredFields()) {
                 if (f.getType().getName().contains("ExoPlayer") || f.getType().getName().contains("Player")) {
