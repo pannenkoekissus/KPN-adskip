@@ -1,0 +1,16 @@
+{
+  "result": {
+    "type": "object",
+    "value": {
+      "deviceId": "\"ddcab3718523f737fb18ded9707092ea6beb92e293df9f9cc3fa257886c3d210\"",
+      "url": "https://api-avs67.tv.prod.itvavs.prod.aws.kpn.com/000002/1.5/A/nld/pctv/kpn/CONTENT/VIDEOURL/PROGRAM/1007885714/1?deviceId=%22ddcab3718523f737fb18ded9707092ea6beb92e293df9f9cc3fa257886c3d210%22&profile=G02",
+      "json": {
+        "resultCode": "KO",
+        "errorDescription": "404-10144",
+        "message": "Asset not found or not valid",
+        "resultObj": {},
+        "systemTime": 1789282083997
+      }
+    }
+  }
+}

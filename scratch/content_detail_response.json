@@ -1,0 +1,200 @@
+{
+  "result": {
+    "type": "object",
+    "value": {
+      "resultCode": "OK",
+      "message": "",
+      "errorDescription": "200-10000",
+      "resultObj": {
+        "total": 1,
+        "containers": [
+          {
+            "id": "1007885714",
+            "layout": "CONTENT_ITEM",
+            "actions": [
+              {
+                "key": "onLoad",
+                "uri": "/CONTENT/USERDATA/LIVE/21",
+                "targetType": "SELF"
+              },
+              {
+                "key": "onLoad",
+                "uri": "/CONTENT/USERDATA/PROGRAM/1007885714",
+                "targetType": "SELF"
+              }
+            ],
+            "metadata": {
+              "contentId": 1007885714,
+              "contentType": "PROGRAM",
+              "shortDescription": "Ernst en Bobbie gaan kaasmaken met boer Kwartel. Maar aan het einde van de dag merkt Bobbie dat zijn horloge niet meer om zijn pols zit. Ze besluiten het horloge te zoeken op de kaasmarkt.",
+              "longDescription": "Ernst en Bobbie gaan kaasmaken met boer Kwartel. Maar aan het einde van de dag merkt Bobbie dat zijn horloge niet meer om zijn pols zit. Ze besluiten het horloge te zoeken op de kaasmarkt.",
+              "year": "1999",
+              "externalId": "EP000845550009",
+              "title": "Ernst, Bobbie en de rest",
+              "titleBrief": "Ernst, Bobbie en de rest",
+              "duration": 720,
+              "contentSubtype": "EPISODE",
+              "programType": "Series",
+              "airingStartTime": 1789194480000,
+              "airingEndTime": 1789195200000,
+              "seriesId": 84555,
+              "popularity": {
+                "KPI": 1,
+                "Boost": 1
+              },
+              "starRating": 0,
+              "pictureUrl": "nTZxSZtN9BUK68yFtCbAe7Zi4pEDC2Zk1FWpwfjTTDmI",
+              "season": 3,
+              "episodeNumber": 9,
+              "episodeTitle": "We maken kaas",
+              "isGeoBlocked": false,
+              "isRecordable": true,
+              "isStartOver": true,
+              "isSOTVTrickplayEnabled": true,
+              "isCatchUp": true,
+              "pcLevel": 0,
+              "pcExtendedRatings": [],
+              "isCopyProtected": true,
+              "copyProtections": [
+                {
+                  "securityCode": "01",
+                  "securityOption": "00000000"
+                },
+                {
+                  "securityCode": "02",
+                  "securityOption": "00000001"
+                },
+                {
+                  "securityCode": "03",
+                  "securityOption": "00000000"
+                },
+                {
+                  "securityCode": "04",
+                  "securityOption": "00000001"
+                }
+              ],
+              "isPlatformBlacklisted": false,
+              "actors": [
+                "Erik van Trommel",
+                "Gert-Jan van den Ende",
+                "Alfred Heppener",
+                "Hero Muller",
+                "Robert Tingelaar"
+              ],
+              "authors": [],
+              "directors": [],
+              "genres": [
+                "Kinderen",
+                "Avontuur",
+                "Komedie"
+              ],
+              "anchors": [],
+              "contentOptions": [
+                "RECORDABLE",
+                "STARTOVER",
+                "CATCHUP"
+              ]
+            },
+            "assets": [
+              {
+                "assetId": 4118941091,
+                "assetType": "MASTER",
+                "assetName": "PROGRAM_SD_DASH_PR",
+                "programType": "SOTV",
+                "videoType": "SD_DASH_PR",
+                "status": "RecordSuccess",
+                "statusDetails": "Recording Successful",
+                "assetStartDeltaTime": 0,
+                "streamQuality": "SD"
+              },
+              {
+                "assetId": 4118941421,
+                "assetType": "MASTER",
+                "assetName": "PROGRAM_SD_DASH_WV",
+                "programType": "SOTV",
+                "videoType": "SD_DASH_WV",
+                "status": "RecordSuccess",
+                "statusDetails": "Recording Successful",
+                "assetStartDeltaTime": 0,
+                "streamQuality": "SD"
+              },
+              {
+                "assetId": 4118941511,
+                "assetType": "MASTER",
+                "assetName": "PROGRAM_SD_SS_PR",
+                "programType": "SOTV",
+                "videoType": "SD_SS_PR",
+                "status": "RecordSuccess",
+                "statusDetails": "Recording Successful",
+                "assetStartDeltaTime": 0,
+                "streamQuality": "SD"
+              },
+              {
+                "assetId": 4118947000,
+                "assetType": "MASTER",
+                "assetName": "PROGRAM_SD_DASH_PR",
+                "programType": "CUTV",
+                "videoType": "SD_DASH_PR",
+                "status": "RecordSuccess",
+                "statusDetails": "Recording Successful",
+                "assetStartDeltaTime": 0,
+                "streamQuality": "SD"
+              },
+              {
+                "assetId": 4118947120,
+                "assetType": "MASTER",
+                "assetName": "PROGRAM_SD_DASH_WV",
+                "programType": "CUTV",
+                "videoType": "SD_DASH_WV",
+                "status": "RecordSuccess",
+                "statusDetails": "Recording Successful",
+                "assetStartDeltaTime": 0,
+                "streamQuality": "SD"
+              },
+              {
+                "assetId": 4118947210,
+                "assetType": "MASTER",
+                "assetName": "PROGRAM_SD_SS_PR",
+                "programType": "CUTV",
+                "videoType": "SD_SS_PR",
+                "status": "RecordSuccess",
+                "statusDetails": "Recording Successful",
+                "assetStartDeltaTime": 0,
+                "streamQuality": "SD"
+              }
+            ],
+            "technicalPackageIds": [
+              10048,
+              11620,
+              100,
+              101,
+              10117,
+              1001639,
+              10057,
+              10411,
+              1365599,
+              1001636,
+              1123102,
+              10225,
+              1391207,
+              10003,
+              11605,
+              1379714,
+              10330,
+              10042,
+              11614,
+              10399
+            ],
+            "channel": {
+              "channelId": 21,
+              "externalChannelId": "dtvchannels_4",
+              "channelName": "RTL 4",
+              "type": "LIVE"
+            }
+          }
+        ]
+      },
+      "systemTime": 1789282083637
+    }
+  }
+}

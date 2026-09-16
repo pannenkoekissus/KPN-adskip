@@ -1,0 +1,20 @@
+--- a/smali_classes3/com/kpn/tvplusapp/MainActivity.smali
++++ b/smali_classes3/com/kpn/tvplusapp/MainActivity.smali
+@@ -onKeyDown-start
+ .method public onKeyDown(ILandroid/view/KeyEvent;)Z
+     .registers 4
+     .param p1, "keyCode"    # I
+     .param p2, "event"      # Landroid/view/KeyEvent;
+ 
++    # === KPN TV+ AdSkip Remote / Keyboard Key Interception ===
++    invoke-static {p1, p2}, Lsoftware/morphe/kpn/AdSkipHook;->onKeyDown(ILandroid/view/KeyEvent;)Z
++    move-result v0
++    if-eqz v0, :cond_adskip_default
++    const/4 v0, 0x1
++    return v0
++
++:cond_adskip_default
+     invoke-super {p0, p1, p2}, Lio/flutter/embedding/android/FlutterActivity;->onKeyDown(ILandroid/view/KeyEvent;)Z
+     move-result v0
+     return v0
+ .end method

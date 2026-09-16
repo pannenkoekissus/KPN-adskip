@@ -1,0 +1,13 @@
+--- a/smali_classes3/io/flutter/plugins/videoplayer/VideoPlayer.smali
++++ b/smali_classes3/io/flutter/plugins/videoplayer/VideoPlayer.smali
+@@ -seekTo-start
+ .method public seekTo(J)V
+     .registers 5
+     .param p1, "position"    # J
+ 
++    # === KPN TV+ AdSkip & Seek Unlock Hook ===
++    invoke-static {p0}, Lsoftware/morphe/kpn/AdSkipHook;->registerPlayer(Ljava/lang/Object;)V
++
+     iget-object v0, p0, Lio/flutter/plugins/videoplayer/VideoPlayer;->exoPlayer:Landroidx/media3/exoplayer/ExoPlayer;
+ 
+     if-eqz v0, :cond_0
