@@ -1,6 +1,7 @@
 """
 Script to apply anti-tamper bypass, uncompressed native libs, crash logger, and build clean standalone APK.
 """
+import argparse
 import os
 import shutil
 import zipfile
@@ -125,6 +126,108 @@ def patch_videoplayer():
     else:
         print("VideoPlayer.smali already patched")
 
+def patch_videoplayer_lifecycle():
+    print(">>> Patching VideoPlayer.smali (constructor / play / pause / dispose hooks)...")
+    vp_path = os.path.join(DECOMPILED, "smali_classes3", "io", "flutter", "plugins", "videoplayer", "VideoPlayer.smali")
+    with open(vp_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    patches = []
+    # 1) Constructor: register every player instance + log its media item. p0=this,
+    #    p2=MediaItem (LA0/w;) of VideoPlayer.<init>(VideoPlayerCallbacks,LA0/w,...)
+    if "log player creation" not in content:
+        target = (
+            ".method public constructor <init>(Lio/flutter/plugins/videoplayer/VideoPlayerCallbacks;LA0/w;"
+            "Lio/flutter/plugins/videoplayer/VideoPlayerOptions;Lio/flutter/view/TextureRegistry$SurfaceProducer;"
+            "Lio/flutter/plugins/videoplayer/VideoPlayer$ExoPlayerProvider;)V\n    .locals 0"
+        )
+        injection = """
+
+    # === KPN TV+ AdSkip Hook: log player creation (concrete class) ===
+    invoke-static {p0}, Lsoftware/morphe/kpn/AdSkipHook;->registerPlayer(Ljava/lang/Object;)V
+    invoke-static {p2}, Lsoftware/morphe/kpn/AdSkipHook;->registerMediaItem(Ljava/lang/Object;)V"""
+        assert target in content, "Could not find VideoPlayer.<init>"
+        content = content.replace(target, target + injection, 1)
+        patches.append("constructor")
+    # 2) play()
+    if "logPlay()V" not in content:
+        target = ".method public play()V\n    .locals 1"
+        injection = """
+
+    # === KPN TV+ AdSkip Hook: log play ===
+    invoke-static {}, Lsoftware/morphe/kpn/AdSkipHook;->logPlay()V"""
+        assert target in content, "Could not find play() in VideoPlayer.smali"
+        content = content.replace(target, target + injection, 1)
+        patches.append("play")
+    # 3) pause()
+    if "logPause()V" not in content:
+        target = ".method public pause()V\n    .locals 1"
+        injection = """
+
+    # === KPN TV+ AdSkip Hook: log pause ===
+    invoke-static {}, Lsoftware/morphe/kpn/AdSkipHook;->logPause()V"""
+        assert target in content, "Could not find pause() in VideoPlayer.smali"
+        content = content.replace(target, target + injection, 1)
+        patches.append("pause")
+    # 4) dispose()
+    if "logDispose()V" not in content:
+        target = ".method public dispose()V\n    .locals 1"
+        injection = """
+
+    # === KPN TV+ AdSkip Hook: log dispose ===
+    invoke-static {}, Lsoftware/morphe/kpn/AdSkipHook;->logDispose()V"""
+        assert target in content, "Could not find dispose() in VideoPlayer.smali"
+        content = content.replace(target, target + injection, 1)
+        patches.append("dispose")
+
+    with open(vp_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("Patched VideoPlayer.smali lifecycle: %s" % (", ".join(patches) if patches else "already up to date"))
+
+def patch_exoplayer_state_logging():
+    print(">>> Patching ExoPlayerEventListener.smali (playback-state / is-playing hooks)...")
+    ep_path = os.path.join(DECOMPILED, "smali_classes3", "io", "flutter", "plugins", "videoplayer", "ExoPlayerEventListener.smali")
+    with open(ep_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    patches = []
+    # 1) onPlaybackStateChanged(I): log raw media3 state (1 idle, 2 buffering, 3 ready, 4 ended)
+    if "PLAYBACK_STATE=" not in content:
+        target = ".method public onPlaybackStateChanged(I)V\n    .locals 3"
+        injection = """
+
+    # === KPN TV+ AdSkip Hook: log playback state (1 idle 2 buffering 3 ready 4 ended) ===
+    new-instance v0, Ljava/lang/StringBuilder;
+    const-string v1, "PLAYBACK_STATE="
+    invoke-direct {v0, v1}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
+    invoke-virtual {v0, p1}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v0
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V"""
+        assert target in content, "Could not find onPlaybackStateChanged in ExoPlayerEventListener.smali"
+        content = content.replace(target, target + injection, 1)
+        patches.append("onPlaybackStateChanged")
+    # 2) onIsPlayingChanged(Z): log playing flag (needs 2 locals, keep p1 untouched)
+    if "IS_PLAYING=" not in content:
+        target = ".method public onIsPlayingChanged(Z)V\n    .locals 1"
+        injection = """
+
+    # === KPN TV+ AdSkip Hook: log is-playing ===
+    new-instance v0, Ljava/lang/StringBuilder;
+    const-string v1, "IS_PLAYING="
+    invoke-direct {v0, v1}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
+    invoke-virtual {v0, p1}, Ljava/lang/StringBuilder;->append(Z)Ljava/lang/StringBuilder;
+    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v0
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V"""
+        assert target in content, "Could not find onIsPlayingChanged in ExoPlayerEventListener.smali"
+        content = content.replace(target, ".method public onIsPlayingChanged(Z)V\n    .locals 2" + injection, 1)
+        patches.append("onIsPlayingChanged")
+
+    with open(ep_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("Patched ExoPlayerEventListener.smali state logging: %s" % (", ".join(patches) if patches else "already up to date"))
+
 def patch_exoplayer_event_listener():
     print(">>> Patching ExoPlayerEventListener.smali to log errors...")
     ep_path = os.path.join(DECOMPILED, "smali_classes3", "io", "flutter", "plugins", "videoplayer", "ExoPlayerEventListener.smali")
@@ -174,6 +277,88 @@ def patch_exoplayer_event_listener():
         print("Patched ExoPlayerEventListener.smali")
     else:
         print("ExoPlayerEventListener.smali already patched")
+
+def patch_native_player():
+    print(">>> Patching native_video_view real player (smali/N2/f + N2/h)...")
+    # The real live player is the native_video_view plugin (cl.ceisufro.native_video_view),
+    # obfuscated to package "N2" in dex0 (smali/, NOT smali_classes3).
+    # - N2/f  = PlatformView (media3 ExoPlayer field f, PlayerView field o, MethodChannel field d)
+    # - N2/h  = media3 Player.Listener (event 'ANDROID_DRMVIDEOPLAYER')
+    f_path = os.path.join(DECOMPILED, "smali", "N2", "f.smali")
+    h_path = os.path.join(DECOMPILED, "smali", "N2", "h.smali")
+
+    if "registerExoPlayer" not in open(f_path, "r", encoding="utf-8").read():
+        with open(f_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        # 1) Hook onMethodCall: log every Dart->native method name (v0 holds method string)
+        target = "    iget-object v0, p1, Lio/flutter/plugin/common/MethodCall;->method:Ljava/lang/String;"
+        assert target in content, "Could not find onMethodCall method fetch in N2/f.smali"
+        injection = target + """
+
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->logNativeMethod(Ljava/lang/String;)V"""
+        content = content.replace(target, injection + "\n", 1)
+
+        # 2) Hook constructor: after ExoPlayer is created & stored in field f (line ~661)
+        target = "    iput-object v2, v0, LN2/f;->f:Landroidx/media3/exoplayer/c;"
+        assert target in content, "Could not find ExoPlayer store in N2/f.smali"
+        injection = """
+
+    invoke-static {v2}, Lsoftware/morphe/kpn/AdSkipHook;->registerExoPlayer(Ljava/lang/Object;)V"""
+        content = content.replace(target, target + injection, 1)
+
+        with open(f_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print("  Patched N2/f.smali (method logging + ExoPlayer registration)")
+
+    if "NATIVE_PLAYER_ERROR" not in open(h_path, "r", encoding="utf-8").read():
+        with open(h_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        # 3) Hook onPlayerError (LA0/C; param): log the error to KPN_AdSkip
+        target = ".method public final onPlayerError(LA0/C;)V\n    .locals 5"
+        assert target in content, "Could not find onPlayerError in N2/h.smali"
+        injection = """
+
+    new-instance v0, Ljava/lang/StringBuilder;
+    const-string v1, "NATIVE_PLAYER_ERROR: "
+    invoke-direct {v0, v1}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
+    invoke-virtual {v0, p1}, Ljava/lang/StringBuilder;->append(Ljava/lang/Object;)Ljava/lang/StringBuilder;
+    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v0
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V"""
+        content = content.replace(target, target + injection, 1)
+
+        # 4) Hook onPlaybackStateChanged(I): log state transitions (1 idle 2 buffering 3 ready 4 ended)
+        target = ".method public final onPlaybackStateChanged(I)V\n    .locals 13"
+        assert target in content, "Could not find onPlaybackStateChanged in N2/h.smali"
+        injection = """
+
+    new-instance v0, Ljava/lang/StringBuilder;
+    const-string v1, "NATIVE_PLAYER_STATE="
+    invoke-direct {v0, v1}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
+    invoke-virtual {v0, p1}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;
+    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v0
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V"""
+        content = content.replace(target, target + injection, 1)
+
+        # 5) Hook onIsPlayingChanged(Z): log playing flag
+        target = ".method public final onIsPlayingChanged(Z)V\n    .locals 5"
+        assert target in content, "Could not find onIsPlayingChanged in N2/h.smali"
+        injection = """
+
+    new-instance v0, Ljava/lang/StringBuilder;
+    const-string v1, "NATIVE_PLAYER_IS_PLAYING="
+    invoke-direct {v0, v1}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
+    invoke-virtual {v0, p1}, Ljava/lang/StringBuilder;->append(Z)Ljava/lang/StringBuilder;
+    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v0
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V"""
+        content = content.replace(target, target + injection, 1)
+
+        with open(h_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print("  Patched N2/h.smali (error / state / isPlaying logging)")
+
 def patch_flutter_security_checker():
     print(">>> Patching flutter_security_checker (r8.1/b.smali)...")
     path = os.path.join(DECOMPILED, "smali_classes3", "r8.1", "b.smali")
@@ -357,7 +542,7 @@ def patch_manifest():
         f.write(content)
     print("Manifest patched.")
 
-def rebuild_and_sign():
+def rebuild_and_sign(no_manifest_swap=False):
     print(">>> Rebuilding APK with apktool...")
     # Clean previous build cache if exists
     build_dir = os.path.join(DECOMPILED, "build")
@@ -378,39 +563,41 @@ def rebuild_and_sign():
     # ("malformed binary resource") and the device (INSTALL_FAILED_INVALID_APK).
     # Swap in a known-good binary manifest from an earlier verified build.
     good_manifest = None
-    candidates = [
-        os.path.join(WORK_DIR, "kpn-tvplus-adskip-standalone-unsigned.apk"),
-        os.path.join(WORK_DIR, "test_smali_build.apk"),
-        os.path.join(OUTPUT_DIR, "kpn-tvplus-adskip-standalone-aligned-debugSigned.apk"),
-        os.path.join(WORK_DIR, "kpn-tvplus-adskip-standalone.apk"),
-    ]
-    for cand in candidates:
-        if not os.path.exists(cand):
-            continue
-        try:
-            with zipfile.ZipFile(cand) as z:
-                data = z.read("AndroidManifest.xml")
-            if data and not data.lstrip().startswith(b"<"):
-                good_manifest = data
-                print(f"  Using known-good manifest from {os.path.basename(cand)}")
-                break
-        except Exception:
-            continue
-    assert good_manifest is not None, "No known-good binary manifest found!"
-
-    # Rebuild unsigned APK with the good manifest (drop any old META-INF)
-    tmp_apk = UNSIGNED_APK + ".reman"
-    with zipfile.ZipFile(UNSIGNED_APK, "r") as zin:
-        with zipfile.ZipFile(tmp_apk, "w") as zout:
-            for item in zin.infolist():
-                if item.filename.startswith("META-INF/"):
-                    continue
-                data = zin.read(item.filename)
-                if item.filename == "AndroidManifest.xml":
-                    data = good_manifest
-                zout.writestr(item, data)
-    os.replace(tmp_apk, UNSIGNED_APK)
-    print(f"  Swapped AndroidManifest.xml ({len(good_manifest)} bytes)")
+    if not no_manifest_swap:
+        candidates = [
+            os.path.join(WORK_DIR, "kpn-tvplus-adskip-standalone-unsigned.apk"),
+            os.path.join(WORK_DIR, "test_smali_build.apk"),
+            os.path.join(OUTPUT_DIR, "kpn-tvplus-adskip-standalone-aligned-debugSigned.apk"),
+            os.path.join(WORK_DIR, "kpn-tvplus-adskip-standalone.apk"),
+        ]
+        for cand in candidates:
+            if not os.path.exists(cand):
+                continue
+            try:
+                with zipfile.ZipFile(cand) as z:
+                    data = z.read("AndroidManifest.xml")
+                if data and not data.lstrip().startswith(b"<"):
+                    good_manifest = data
+                    print(f"  Using known-good manifest from {os.path.basename(cand)}")
+                    break
+            except Exception:
+                continue
+    if good_manifest is not None:
+        # Rebuild unsigned APK with the good manifest (drop any old META-INF)
+        tmp_apk = UNSIGNED_APK + ".reman"
+        with zipfile.ZipFile(UNSIGNED_APK, "r") as zin:
+            with zipfile.ZipFile(tmp_apk, "w") as zout:
+                for item in zin.infolist():
+                    if item.filename.startswith("META-INF/"):
+                        continue
+                    data = zin.read(item.filename)
+                    if item.filename == "AndroidManifest.xml":
+                        data = good_manifest
+                    zout.writestr(item, data)
+        os.replace(tmp_apk, UNSIGNED_APK)
+        print(f"  Swapped AndroidManifest.xml ({len(good_manifest)} bytes)")
+    else:
+        print("  --no-manifest-swap: keeping apktool's re-encoded AndroidManifest.xml")
 
     jarsigner = os.path.join(os.path.dirname(JAVA), "jarsigner.exe")
     keytool = os.path.join(os.path.dirname(JAVA), "keytool.exe")
@@ -481,17 +668,87 @@ def rebuild_and_sign():
     else:
         print(f"ERROR: signed APK missing at {final_name} - check antivirus quarantine")
 
+def redecode_pristine(pristine_res=False):
+    print(">>> Re-decoding base.apk fresh into orig_decompiled (wipes all in-place patches)...")
+    base_apk = os.path.join(WORK_DIR, "base.apk")
+    assert os.path.exists(base_apk), f"Missing {base_apk}"
+    backup = os.path.join(WORK_DIR, "orig_decompiled_pre_redecode")
+    if os.path.exists(backup):
+        shutil.rmtree(backup)
+    if os.path.exists(DECOMPILED):
+        os.rename(DECOMPILED, backup)
+        print(f"  Backed up current tree to {backup}")
+    cmd = [JAVA, "-jar", APKTOOL, "d", base_apk, "-o", DECOMPILED, "-f"]
+    if pristine_res:
+        # -r = "do not decode resources": keeps the ORIGINAL binary resources.arsc
+        # (and res/* as-is) so resource IDs stay byte-identical to Play Store.
+        # This is REQUIRED: apktool's re-encode of this app's mixed base+split
+        # resource table turns drawables (e.g. exo_styled_controls_previous
+        # 0x7f0800e7) into null references -> PlayerView inflate crash (black screen).
+        cmd.append("-r")
+        print("  [pristine-resources] keeping original resources.arsc (no resource re-encode)")
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        if os.path.exists(backup) and not os.path.exists(DECOMPILED):
+            os.rename(backup, DECOMPILED)
+        print("  apktool decode STDOUT:", (res.stdout or "")[-1000:])
+        print("  apktool decode STDERR:", (res.stderr or "")[-1000:])
+        raise SystemExit(f"apktool decode failed with code {res.returncode}")
+    for sm in ("smali", "smali_classes2", "smali_classes3"):
+        print(f"  {sm} present: {os.path.exists(os.path.join(DECOMPILED, sm))}")
+    print("  Fresh decode complete - all patches must be re-applied")
+
 def main():
-    patch_adskip_hook()
-    patch_main_activity()
-    patch_videoplayer()
-    patch_exoplayer_event_listener()
-    patch_flutter_security_checker()
-    patch_safe_device()
-    inject_native_libs_and_config()
-    merge_resources()
+    parser = argparse.ArgumentParser(description="Build patched KPN TV+ standalone APK")
+    parser.add_argument("--clean", action="store_true",
+                        help="Rebuilt ORIGINAL: skip ALL code/libtConfig patches (no hooks, no security, no libs) - only resource merge + manifest + rebuild + sign")
+    parser.add_argument("--no-security", action="store_true",
+                        help="Skip flutter_security_checker & safe_device bypass patches (isolate video breakage)")
+    parser.add_argument("--no-native-hooks", action="store_true",
+                        help="Skip native_video_view player instrumentation (N2/f, N2/h logging hooks)")
+    parser.add_argument("--no-videoplayer-hooks", action="store_true",
+                        help="Skip video_player plugin hooks (registerPlayer/lifecycle/exoplayer logging)")
+    parser.add_argument("--no-libs-config", action="store_true",
+                        help="Skip native lib injection & doNotCompress config (STALE-LIB test)")
+    parser.add_argument("--redecode", action="store_true",
+                        help="Re-decompile base.apk fresh into orig_decompiled BEFORE patching (clean bisect; wipes all prior in-place patches)")
+    parser.add_argument("--no-merge", action="store_true",
+                        help="Skip nl/xxhdpi resource merge when combined with --clean (pure base.apk rebuild)")
+    parser.add_argument("--pristine-resources", action="store_true",
+                        help="Decode with apktool -r (keep ORIGINAL resources.arsc, no re-encode). Fixes rebuild resource corruption (exo_styled_controls_previous null-ref black screen). Implies no-resource-merge.")
+    parser.add_argument("--no-manifest-swap", action="store_true",
+                        help="Keep apktool's own re-encoded AndroidManifest.xml instead of swapping in a stale known-good one (isolate manifest-vs-resource-table ID mismatch)")
+    args = parser.parse_args()
+
+    if args.redecode:
+        redecode_pristine(pristine_res=args.pristine_resources)
+
+    if args.clean:
+        print(">>> CLEAN MODE: skipping all code patches (rebuild-only bisect)")
+    else:
+        patch_adskip_hook()
+        patch_main_activity()
+
+    if not (args.clean or args.no_videoplayer_hooks):
+        patch_videoplayer()
+        patch_videoplayer_lifecycle()
+        patch_exoplayer_state_logging()
+        patch_exoplayer_event_listener()
+    if not (args.clean or args.no_native_hooks):
+        patch_native_player()
+    if not (args.clean or args.no_security):
+        patch_flutter_security_checker()
+        patch_safe_device()
+    else:
+        print(">>> SKIPPING security bypass patches (--no-security or clean)")
+    if not args.no_libs_config:
+        inject_native_libs_and_config()   # REQUIRED even in clean mode: base.apk has no lib/ dir
+    if args.pristine_resources:
+        print(">>> SKIPPING resource merge (--pristine-resources keeps original resources.arsc)")
+    elif not args.no_merge:
+        merge_resources()
     patch_manifest()
-    rebuild_and_sign()
+    rebuild_and_sign(no_manifest_swap=args.no_manifest_swap)
 
 if __name__ == "__main__":
     main()

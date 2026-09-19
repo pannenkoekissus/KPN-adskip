@@ -5,6 +5,8 @@
 # static fields
 .field private static activePlayer:Ljava/lang/Object;
 
+.field private static activeExoPlayer:Ljava/lang/Object;
+
 .field private static activeActivity:Ljava/lang/ref/WeakReference;
     .annotation system Ldalvik/annotation/Signature;
         value = {
@@ -26,6 +28,7 @@
 
     const/4 v0, 0x0
     sput-object v0, Lsoftware/morphe/kpn/AdSkipHook;->activePlayer:Ljava/lang/Object;
+    sput-object v0, Lsoftware/morphe/kpn/AdSkipHook;->activeExoPlayer:Ljava/lang/Object;
     sput-object v0, Lsoftware/morphe/kpn/AdSkipHook;->activeActivity:Ljava/lang/ref/WeakReference;
     sput-object v0, Lsoftware/morphe/kpn/AdSkipHook;->mediaStoreUri:Landroid/net/Uri;
     const-wide/16 v0, -0x1
@@ -67,6 +70,45 @@
     return-void
 .end method
 
+.method public static registerExoPlayer(Ljava/lang/Object;)V
+    .registers 3
+    .param p0, "exoPlayer"    # Ljava/lang/Object;
+
+    if-eqz p0, :cond_0
+    sput-object p0, Lsoftware/morphe/kpn/AdSkipHook;->activeExoPlayer:Ljava/lang/Object;
+
+    new-instance v0, Ljava/lang/StringBuilder;
+    invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
+    const-string v1, "registerExoPlayer: "
+    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {p0}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+    move-result-object v1
+    invoke-virtual {v1}, Ljava/lang/Class;->getName()Ljava/lang/String;
+    move-result-object v1
+    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v0
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V
+
+    :cond_0
+    return-void
+.end method
+
+.method public static logNativeMethod(Ljava/lang/String;)V
+    .registers 3
+    .param p0, "methodName"    # Ljava/lang/String;
+
+    new-instance v0, Ljava/lang/StringBuilder;
+    invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
+    const-string v1, "NATIVE_PLAYER call: "
+    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v0, p0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v0
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V
+    return-void
+.end method
+
 .method public static registerActivity(Landroid/app/Activity;)V
     .registers 2
     .param p0, "act"    # Landroid/app/Activity;
@@ -95,6 +137,49 @@
     return-void
 .end method
 
+.method public static logPlay()V
+    .registers 1
+
+    const-string v0, "VIDEOPLAYER play()"
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V
+    return-void
+.end method
+
+.method public static logPause()V
+    .registers 1
+
+    const-string v0, "VIDEOPLAYER pause()"
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V
+    return-void
+.end method
+
+.method public static logDispose()V
+    .registers 1
+
+    const-string v0, "VIDEOPLAYER dispose()"
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V
+    return-void
+.end method
+
+.method public static registerMediaItem(Ljava/lang/Object;)V
+    .registers 3
+
+    if-eqz p0, :cond_done
+    new-instance v0, Ljava/lang/StringBuilder;
+    invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
+    const-string v1, "MEDIA_ITEM: "
+    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {p0}, Ljava/lang/Object;->toString()Ljava/lang/String;
+    move-result-object v1
+    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v0
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V
+
+    :cond_done
+    return-void
+.end method
+
 .method public static skipAdBreak()V
     .registers 2
 
@@ -105,7 +190,7 @@
 .end method
 
 .method public static undoLastJump()V
-    .registers 5
+    .registers 6
 
     sget-wide v0, Lsoftware/morphe/kpn/AdSkipHook;->previousPositionMs:J
     const-wide/16 v2, 0x0
@@ -195,12 +280,7 @@
     invoke-virtual {v1, v2, v9}, Ljava/lang/Class;->getMethod(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;
     move-result-object v1
 
-    new-array v2, v8, [Ljava/lang/Object;
-    invoke-static {v6, v7}, Ljava/lang/Long;->valueOf(J)Ljava/lang/Long;
-    move-result-object v6
-    aput-object v6, v2, v3
-
-    # Log the seek target before executing
+    # Log the seek target before executing (v6/v7 still hold the primitive long)
     new-instance v11, Ljava/lang/StringBuilder;
     invoke-direct {v11}, Ljava/lang/StringBuilder;-><init>()V
     const-string v10, "seek to "
@@ -209,6 +289,11 @@
     invoke-virtual {v11}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
     move-result-object v11
     invoke-static {v11}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V
+
+    new-array v2, v8, [Ljava/lang/Object;
+    invoke-static {v6, v7}, Ljava/lang/Long;->valueOf(J)Ljava/lang/Long;
+    move-result-object v6
+    aput-object v6, v2, v3
 
     invoke-virtual {v1, v0, v2}, Ljava/lang/reflect/Method;->invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;
     :try_end_0
@@ -292,10 +377,15 @@
 .end method
 
 .method private static getExoPlayer()Ljava/lang/Object;
-    .registers 5
+    .registers 6
 
-    sget-object v0, Lsoftware/morphe/kpn/AdSkipHook;->activePlayer:Ljava/lang/Object;
+    sget-object v0, Lsoftware/morphe/kpn/AdSkipHook;->activeExoPlayer:Ljava/lang/Object;
     const/4 v1, 0x0
+    if-eqz v0, :cond_direct
+    return-object v0
+
+    :cond_direct
+    sget-object v0, Lsoftware/morphe/kpn/AdSkipHook;->activePlayer:Ljava/lang/Object;
     if-nez v0, :cond_0
     return-object v1
 
@@ -306,8 +396,8 @@
     const-string v3, "exoPlayer"
     invoke-virtual {v2, v3}, Ljava/lang/Class;->getDeclaredField(Ljava/lang/String;)Ljava/lang/reflect/Field;
     move-result-object v2
-    const/4 v3, 0x1
-    invoke-virtual {v2, v3}, Ljava/lang/reflect/Field;->setAccessible(Z)V
+    const/4 v4, 0x1
+    invoke-virtual {v2, v4}, Ljava/lang/reflect/Field;->setAccessible(Z)V
     invoke-virtual {v2, v0}, Ljava/lang/reflect/Field;->get(Ljava/lang/Object;)Ljava/lang/Object;
     move-result-object v0
     :try_end_0
