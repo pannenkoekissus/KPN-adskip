@@ -125,7 +125,7 @@ def apply_smali_patches():
 
 
 def patch_remote_key_shortcuts():
-    """Wire AdSkipHook.onKeyDown so the remote/shortcut keys (FF/RW/S/A/Z) work."""
+    """Wire AdSkipHook.onKeyDown via dispatchKeyEvent so remote/shortcut keys work."""
     path = os.path.join(BASE_DECOMPILED, "smali_classes3", "com", "kpn", "tvplusapp", "MainActivity.smali")
     if not os.path.exists(path):
         log("  WARNING: MainActivity.smali not found, key shortcuts skipped")
@@ -133,28 +133,29 @@ def patch_remote_key_shortcuts():
     with open(path, "r", encoding="utf-8") as f:
         content = f.read()
     if "AdSkipHook;->onKeyDown" in content:
-        log("  MainActivity.smali onKeyDown: already patched")
+        log("  MainActivity.smali dispatchKeyEvent: already patched")
         return
-    target = ".method public onKeyDown(ILandroid/view/KeyEvent;)Z\n"
+    target = ".method public final dispatchKeyEvent(Landroid/view/KeyEvent;)Z\n"
     if target not in content:
-        log("  WARNING: onKeyDown(ILandroid/view/KeyEvent;)Z not found in MainActivity, key shortcuts skipped")
+        log("  WARNING: dispatchKeyEvent(Landroid/view/KeyEvent;)Z not found in MainActivity, key shortcuts skipped")
         return
     injection = target + """
-    # === KPN TV+ AdSkip Remote / Keyboard Key Interception ===
-    invoke-static {p1, p2}, Lsoftware/morphe/kpn/AdSkipHook;->onKeyDown(ILandroid/view/KeyEvent;)Z
+    # === KPN TV+ AdSkip Hook: intercept keys via dispatchKeyEvent ===
+    invoke-virtual {p1}, Landroid/view/KeyEvent;->getKeyCode()I
+    move-result v0
+    invoke-static {v0, p1}, Lsoftware/morphe/kpn/AdSkipHook;->onKeyDown(ILandroid/view/KeyEvent;)Z
     move-result v0
     if-eqz v0, :cond_adskip_default
     const/4 v0, 0x1
     return v0
 
-    .line 1
     :cond_adskip_default
+
 """
-    # The diff inserts right AFTER the method header; keep the original body intact.
     content = content.replace(target, injection, 1)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
-    log("  MainActivity.smali onKeyDown: patched (remote key shortcuts enabled)")
+    log("  MainActivity.smali dispatchKeyEvent: patched (remote key shortcuts enabled)")
 
 
 def rebuild_base():
@@ -186,6 +187,35 @@ def rebuild_base():
                 zout.writestr(item, data)
     os.replace(tmp, PATCHED_BASE_UNSIGNED)
     log(f"  Swapped in original binary AndroidManifest.xml ({len(orig_manifest)} bytes)")
+
+    verify_patches_present()
+
+
+def verify_patches_present():
+    """Fail loudly if the rebuild lost the injected hook.
+
+    A silent regression once shipped a "patched" base.apk that contained NONE of
+    the smali edits (the hook call was simply missing), which is indistinguishable
+    from stock at runtime. Scan the rebuilt dex payload for the hook's class
+    descriptor so that can never happen unnoticed again.
+    """
+    markers = {
+        b"Lsoftware/morphe/kpn/AdSkipHook;": "AdSkipHook class",
+        b"onKeyDown": "MainActivity key routing",
+    }
+    dex_blob = b""
+    with zipfile.ZipFile(PATCHED_BASE_UNSIGNED) as z:
+        for name in z.namelist():
+            if name.startswith("classes") and name.endswith(".dex"):
+                dex_blob += z.read(name)
+    missing = [label for marker, label in markers.items() if marker not in dex_blob]
+    if missing:
+        raise SystemExit(
+            "FATAL: rebuilt base.apk is missing patch(es): "
+            + ", ".join(missing)
+            + " - smali patches were not applied. Aborting before signing a stock build."
+        )
+    log("  Verified: AdSkipHook + key routing present in rebuilt dex")
 
 
 def ensure_debug_keystore():
@@ -279,6 +309,7 @@ def main():
             raise SystemExit(f"Config split {wanted} missing from {WORK_DIR} (is it in the .apks bundle?)")
 
     decompile_base()
+    apply_smali_patches()
     rebuild_base()
 
     log(">>> Signing EVERY split with the SAME key (required for install-multiple)...")
