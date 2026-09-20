@@ -7,7 +7,7 @@
 
 .field private static activeExoPlayer:Ljava/lang/Object;
 
-.field private static activeActivity:Ljava/lang/ref/WeakReference;
+.field public static activeActivity:Ljava/lang/ref/WeakReference;
     .annotation system Ldalvik/annotation/Signature;
         value = {
             "Ljava/lang/ref/WeakReference<",
