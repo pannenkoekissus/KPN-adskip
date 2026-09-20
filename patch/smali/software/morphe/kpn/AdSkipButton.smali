@@ -4,10 +4,41 @@
 
 .field private final action:I
 
+.field private static overlayView:Landroid/view/View;
+
 .method public constructor <init>(I)V
     .registers 2
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
     iput p1, p0, Lsoftware/morphe/kpn/AdSkipButton;->action:I
+    return-void
+.end method
+
+.method public static setVisibility(Z)V
+    .registers 5
+    .param p0, "visible"    # Z
+    sget-object v0, Lsoftware/morphe/kpn/AdSkipButton;->overlayView:Landroid/view/View;
+
+    new-instance v1, Ljava/lang/StringBuilder;
+    invoke-direct {v1}, Ljava/lang/StringBuilder;-><init>()V
+    const-string v2, "setVisibility("
+    invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v1, p0}, Ljava/lang/StringBuilder;->append(Z)Ljava/lang/StringBuilder;
+    const-string v2, ") overlayView="
+    invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v1, v0}, Ljava/lang/StringBuilder;->append(Ljava/lang/Object;)Ljava/lang/StringBuilder;
+    invoke-virtual {v1}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v1
+    invoke-static {v1}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V
+
+    if-eqz v0, :end
+    if-eqz p0, :hide
+    const/4 v3, 0x0
+    invoke-virtual {v0, v3}, Landroid/view/View;->setVisibility(I)V
+    return-void
+    :hide
+    const/16 v3, 0x8
+    invoke-virtual {v0, v3}, Landroid/view/View;->setVisibility(I)V
+    :end
     return-void
 .end method
 
@@ -117,6 +148,9 @@
 
     :try_start_0
     invoke-interface {v0, v1, v8}, Landroid/view/WindowManager;->addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V
+    sput-object v1, Lsoftware/morphe/kpn/AdSkipButton;->overlayView:Landroid/view/View;
+    const/16 v9, 0x8
+    invoke-virtual {v1, v9}, Landroid/view/View;->setVisibility(I)V
     const-string v9, "AdSkip"
     const-string v10, "Overlay added OK"
     invoke-static {v9, v10}, Landroid/util/Log;->e(Ljava/lang/String;Ljava/lang/String;)I

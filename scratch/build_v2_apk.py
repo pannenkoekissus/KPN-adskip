@@ -219,12 +219,13 @@ def patch_exoplayer_state_logging():
         assert target in content, "Could not find onPlaybackStateChanged in ExoPlayerEventListener.smali"
         content = content.replace(target, target + injection, 1)
         patches.append("onPlaybackStateChanged")
-    # 2) onIsPlayingChanged(Z): log playing flag (needs 2 locals, keep p1 untouched)
-    if "IS_PLAYING=" not in content:
+    # 2) onIsPlayingChanged(Z): log playing flag AND show/hide overlay
+    if "setPlaying" not in content:
         target = ".method public onIsPlayingChanged(Z)V\n    .locals 1"
         injection = """
 
-    # === KPN TV+ AdSkip Hook: log is-playing ===
+    # === KPN TV+ AdSkip Hook: log is-playing + toggle overlay ===
+    invoke-static {p1}, Lsoftware/morphe/kpn/AdSkipHook;->setPlaying(Z)V
     new-instance v0, Ljava/lang/StringBuilder;
     const-string v1, "IS_PLAYING="
     invoke-direct {v0, v1}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
@@ -290,6 +291,71 @@ def patch_exoplayer_event_listener():
     else:
         print("ExoPlayerEventListener.smali already patched")
 
+def patch_exoplayer_ad_bypass():
+    """Patch ExoPlayer c.smali h()Z to return false — bypasses 'seekTo ignored because an ad is playing'."""
+    c_path = os.path.join(DECOMPILED, "smali", "androidx", "media3", "exoplayer", "c.smali")
+    if not os.path.exists(c_path):
+        print("WARNING: c.smali not found, ExoPlayer ad bypass skipped")
+        return
+    with open(c_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    if "AD_BYPASS" in content:
+        print("ExoPlayer ad bypass already patched")
+        return
+    target = ".method public final h()Z"
+    if target not in content:
+        print("WARNING: h()Z not found in c.smali, ad bypass skipped")
+        return
+    # Find the .end method that closes h()Z
+    end_idx = content.find(".end method", content.find(target))
+    if end_idx == -1:
+        print("WARNING: could not find end of h()Z, ad bypass skipped")
+        return
+    old_method = content[content.find(target):end_idx + len(".end method")]
+    new_method = target + """
+    .registers 2
+
+    # === KPN TV+ AdSkip Hook: AD_BYPASS — always return false so seekTo works during ads ===
+    const/4 v0, 0x0
+    return v0
+.end method"""
+    content = content.replace(old_method, new_method, 1)
+    with open(c_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("Patched ExoPlayer ad bypass (h()Z -> return false)")
+
+def patch_ima_skippable():
+    """Patch IMA SDK AdData.skippable() to always return TRUE so the skip button works."""
+    path = os.path.join(DECOMPILED, "smali", "com", "google", "ads", "interactivemedia", "v3", "impl", "data", "AutoValue_AdData.smali")
+    if not os.path.exists(path):
+        print("WARNING: AutoValue_AdData.smali not found, IMA skippable patch skipped")
+        return
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    if "SKIPPABLE_BYPASS" in content:
+        print("IMA skippable bypass already patched")
+        return
+    target = ".method public skippable()Ljava/lang/Boolean;"
+    if target not in content:
+        print("WARNING: skippable() not found, IMA patch skipped")
+        return
+    end_idx = content.find(".end method", content.find(target))
+    if end_idx == -1:
+        print("WARNING: could not find end of skippable(), patch skipped")
+        return
+    old_method = content[content.find(target):end_idx + len(".end method")]
+    new_method = target + """
+    .registers 2
+
+    # === KPN TV+ AdSkip Hook: SKIPPABLE_BYPASS — force all ads to be skippable ===
+    sget-object v0, Ljava/lang/Boolean;->TRUE:Ljava/lang/Boolean;
+    return-object v0
+.end method"""
+    content = content.replace(old_method, new_method, 1)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("Patched IMA skippable bypass (skippable -> TRUE)")
+
 def patch_native_player():
     print(">>> Patching native_video_view real player (smali/N2/f + N2/h)...")
     # The real live player is the native_video_view plugin (cl.ceisufro.native_video_view),
@@ -353,10 +419,13 @@ def patch_native_player():
     invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V"""
         content = content.replace(target, target + injection, 1)
 
-        # 5) Hook onIsPlayingChanged(Z): log playing flag
+        # 5) Hook onIsPlayingChanged(Z): log playing flag + toggle overlay
         target = ".method public final onIsPlayingChanged(Z)V\n    .locals 5"
         assert target in content, "Could not find onIsPlayingChanged in N2/h.smali"
-        injection = """
+        if "setPlaying" not in content:
+            injection = """
+
+    invoke-static {p1}, Lsoftware/morphe/kpn/AdSkipHook;->setPlaying(Z)V
 
     new-instance v0, Ljava/lang/StringBuilder;
     const-string v1, "NATIVE_PLAYER_IS_PLAYING="
@@ -365,7 +434,7 @@ def patch_native_player():
     invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
     move-result-object v0
     invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V"""
-        content = content.replace(target, target + injection, 1)
+            content = content.replace(target, target + injection, 1)
 
         with open(h_path, "w", encoding="utf-8") as f:
             f.write(content)

@@ -117,6 +117,7 @@ def apply_smali_patches():
     v2.patch_videoplayer_lifecycle()
     v2.patch_exoplayer_state_logging()
     v2.patch_exoplayer_event_listener()
+    v2.patch_exoplayer_ad_bypass()
     v2.patch_native_player()
     v2.patch_flutter_security_checker()
     v2.patch_safe_device()
