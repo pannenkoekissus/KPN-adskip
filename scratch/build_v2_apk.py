@@ -80,6 +80,12 @@ def patch_adskip_hook():
         shutil.copy2(task_src, task_dst)
         print("Copied AdSkipOverlayTask.smali to:", task_dst)
 
+    watcher_src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "patch", "smali", "software", "morphe", "kpn", "AdSkipPipWatcher.smali")
+    watcher_dst = os.path.join(hook_dir, "AdSkipPipWatcher.smali")
+    if os.path.exists(watcher_src):
+        shutil.copy2(watcher_src, watcher_dst)
+        print("Copied AdSkipPipWatcher.smali to:", watcher_dst)
+
 def patch_main_activity():
     print(">>> Patching MainActivity.smali (guaranteed startup AdSkipHook hook)...")
     path = os.path.join(DECOMPILED, "smali_classes3", "com", "kpn", "tvplusapp", "MainActivity.smali")
@@ -102,23 +108,30 @@ def patch_main_activity():
 
     content = content.replace(target, injection, 1)
 
-    # Add onPictureInPictureModeChanged hook
-    pip_target = ".method public onPictureInPictureModeChanged(Z)V"
-    if pip_target in content:
-        # Hook existing method
-        import re as _re
-        # Find the method body start
-        m = _re.search(_re.escape(pip_target) + r'\n(\s*\.locals \d+)', content)
-        if m:
-            locals_line = m.group(1)
-            pip_injection = locals_line + """
+    # --- Hook PiP mode changes so the overlay can hide on PiP entry. ---
+    # The framework dispatches onPictureInPictureModeChanged when PiP starts/ends.
+    # Playing state does NOT change on PiP entry, so this is the ONLY event that
+    # reliably fires. The method may be declared `final`; match any modifier and
+    # either (Z)V or (Z,Landroid/content/res/Configuration;)V.
+    # In both signatures p1 holds the boolean.
+    import re as _re
+    pip_matched = False
+    m = _re.search(
+        r"\.method (?:public|protected)[^\r\n]*onPictureInPictureModeChanged"
+        r"\(Z[^\r\n]*\)V\r?\n[ \t]*\.locals \d+",
+        content,
+    )
+    if m:
+        injection = """
 
-    # === KPN TV+ AdSkip Hook: notify PiP mode change ===
+    # === KPN TV+ AdSkip Hook: track PiP mode for overlay hiding ===
     invoke-static {p1}, Lsoftware/morphe/kpn/AdSkipHook;->setPipMode(Z)V"""
-            content = content.replace(locals_line, pip_injection, 1)
-            print("  Patched existing onPictureInPictureModeChanged")
+        content = content[: m.end()] + injection + content[m.end():]
+        print("  Patched existing onPictureInPictureModeChanged (PiP hook)")
+        pip_matched = True
     else:
-        # Add new method before the last .end class
+        # No PiP override exists: add a one-arg override appended at EOF.
+        # (Some apktool outputs omit .end class; EOF is always safe.)
         pip_method = """
 
 # === KPN TV+ AdSkip Hook: PiP mode change callback ===
@@ -131,8 +144,11 @@ def patch_main_activity():
     return-void
 .end method
 """
-        content = content.replace(".end class", pip_method + "\n.end class")
-        print("  Added onPictureInPictureModeChanged hook")
+        content = content.rstrip("\r\n") + "\n" + pip_method
+        print("  Added onPictureInPictureModeChanged hook (no existing override found)")
+        pip_matched = True
+
+    assert "setPipMode" in content, "FATAL: setPipMode call missing from MainActivity after patching"
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)

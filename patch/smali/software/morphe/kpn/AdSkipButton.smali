@@ -14,21 +14,46 @@
 .end method
 
 .method public static setVisibility(Z)V
-    .registers 4
+    .registers 5
     .param p0, "visible"    # Z
 
-    # If showing, check PiP mode
+    # If hiding, skip the PiP guard entirely
     if-eqz p0, :do_set
 
-    # Check PiP mode from AdSkipHook
+    # 1) Static PiP flag (updated by onPictureInPictureModeChanged hook)
     invoke-static {}, Lsoftware/morphe/kpn/AdSkipHook;->isInPipMode()Z
     move-result v0
+    if-nez v0, :pip_flag
+
+    # 2) Fallback: query the registered activity directly (belt & suspenders)
+    sget-object v0, Lsoftware/morphe/kpn/AdSkipHook;->activeActivity:Ljava/lang/ref/WeakReference;
     if-eqz v0, :do_set
+    invoke-virtual {v0}, Ljava/lang/ref/WeakReference;->get()Ljava/lang/Object;
+    move-result-object v0
+    if-eqz v0, :do_set
+    check-cast v0, Landroid/app/Activity;
+    invoke-virtual {v0}, Landroid/app/Activity;->isInPictureInPictureMode()Z
+    move-result v0
+    if-nez v0, :pip_act
+    goto :do_set
+
+    :pip_flag
+    const-string v2, "KPN_AdSkip"
+    const-string v3, "overlay hidden (pip: static flag)"
+    invoke-static {v2, v3}, Landroid/util/Log;->e(Ljava/lang/String;Ljava/lang/String;)I
+    goto :pip_hide
+
+    :pip_act
+    const-string v2, "KPN_AdSkip"
+    const-string v3, "overlay hidden (pip: activity check)"
+    invoke-static {v2, v3}, Landroid/util/Log;->e(Ljava/lang/String;Ljava/lang/String;)I
+
+    :pip_hide
     # In PiP — hide overlay and bail
-    sget-object v1, Lsoftware/morphe/kpn/AdSkipButton;->overlayView:Landroid/view/View;
-    if-eqz v1, :return_early
-    const/16 v2, 0x8
-    invoke-virtual {v1, v2}, Landroid/view/View;->setVisibility(I)V
+    sget-object v0, Lsoftware/morphe/kpn/AdSkipButton;->overlayView:Landroid/view/View;
+    if-eqz v0, :return_early
+    const/16 v1, 0x8
+    invoke-virtual {v0, v1}, Landroid/view/View;->setVisibility(I)V
     :return_early
     return-void
 
@@ -78,10 +103,20 @@
 
     if-eqz p0, :end
 
-    # Check PiP mode from AdSkipHook
+    # Check PiP mode from AdSkipHook static flag
     invoke-static {}, Lsoftware/morphe/kpn/AdSkipHook;->isInPipMode()Z
     move-result v0
-    if-eqz v0, :not_pip
+    if-nez v0, :end
+    # Fallback: query the registered activity directly
+    sget-object v1, Lsoftware/morphe/kpn/AdSkipHook;->activeActivity:Ljava/lang/ref/WeakReference;
+    if-eqz v1, :not_pip
+    invoke-virtual {v1}, Ljava/lang/ref/WeakReference;->get()Ljava/lang/Object;
+    move-result-object v1
+    if-eqz v1, :not_pip
+    check-cast v1, Landroid/app/Activity;
+    invoke-virtual {v1}, Landroid/app/Activity;->isInPictureInPictureMode()Z
+    move-result v1
+    if-eqz v1, :not_pip
     return-void
     :not_pip
 
@@ -112,6 +147,11 @@
     const-string v5, "\u00ab"
     invoke-virtual {v4, v5}, Landroid/widget/Button;->setText(Ljava/lang/CharSequence;)V
     invoke-virtual {v4, v3}, Landroid/widget/Button;->setTextSize(F)V
+    const/4 v5, 0x2
+    invoke-virtual {v4, v5}, Landroid/widget/Button;->setMinHeight(I)V
+    const/4 v5, 0x2
+    const/4 v6, 0x0
+    invoke-virtual {v4, v5, v6, v5, v6}, Landroid/widget/Button;->setPadding(IIII)V
     new-instance v5, Lsoftware/morphe/kpn/AdSkipButton;
     const/4 v6, 0x1
     invoke-direct {v5, v6}, Lsoftware/morphe/kpn/AdSkipButton;-><init>(I)V
@@ -125,9 +165,11 @@
     invoke-virtual {v4, v5}, Landroid/widget/Button;->setText(Ljava/lang/CharSequence;)V
     const/high16 v6, 0x41080000    # 8.0f
     invoke-virtual {v4, v6}, Landroid/widget/Button;->setTextSize(F)V
-    # Minimal horizontal padding
-    const/4 v6, 0x4
-    invoke-virtual {v4, v6, v6, v6, v6}, Landroid/widget/Button;->setPadding(IIII)V
+    const/4 v5, 0x2
+    invoke-virtual {v4, v5}, Landroid/widget/Button;->setMinHeight(I)V
+    const/4 v5, 0x3
+    const/4 v6, 0x0
+    invoke-virtual {v4, v5, v6, v5, v6}, Landroid/widget/Button;->setPadding(IIII)V
     new-instance v5, Lsoftware/morphe/kpn/AdSkipButton;
     invoke-direct {v5, v2}, Lsoftware/morphe/kpn/AdSkipButton;-><init>(I)V
     invoke-virtual {v4, v5}, Landroid/widget/Button;->setOnClickListener(Landroid/view/View$OnClickListener;)V
@@ -140,8 +182,11 @@
     invoke-virtual {v4, v5}, Landroid/widget/Button;->setText(Ljava/lang/CharSequence;)V
     const/high16 v6, 0x41100000    # 9.0f
     invoke-virtual {v4, v6}, Landroid/widget/Button;->setTextSize(F)V
-    const/4 v6, 0x4
-    invoke-virtual {v4, v6, v6, v6, v6}, Landroid/widget/Button;->setPadding(IIII)V
+    const/4 v5, 0x2
+    invoke-virtual {v4, v5}, Landroid/widget/Button;->setMinHeight(I)V
+    const/4 v5, 0x2
+    const/4 v6, 0x0
+    invoke-virtual {v4, v5, v6, v5, v6}, Landroid/widget/Button;->setPadding(IIII)V
     new-instance v5, Lsoftware/morphe/kpn/AdSkipButton;
     const/4 v6, 0x2
     invoke-direct {v5, v6}, Lsoftware/morphe/kpn/AdSkipButton;-><init>(I)V
@@ -155,8 +200,11 @@
     invoke-virtual {v4, v5}, Landroid/widget/Button;->setText(Ljava/lang/CharSequence;)V
     const/high16 v6, 0x41080000    # 8.0f
     invoke-virtual {v4, v6}, Landroid/widget/Button;->setTextSize(F)V
-    const/4 v6, 0x4
-    invoke-virtual {v4, v6, v6, v6, v6}, Landroid/widget/Button;->setPadding(IIII)V
+    const/4 v5, 0x2
+    invoke-virtual {v4, v5}, Landroid/widget/Button;->setMinHeight(I)V
+    const/4 v5, 0x3
+    const/4 v6, 0x0
+    invoke-virtual {v4, v5, v6, v5, v6}, Landroid/widget/Button;->setPadding(IIII)V
     new-instance v5, Lsoftware/morphe/kpn/AdSkipButton;
     const/4 v6, 0x3
     invoke-direct {v5, v6}, Lsoftware/morphe/kpn/AdSkipButton;-><init>(I)V
@@ -174,8 +222,8 @@
     iput v9, v8, Landroid/view/WindowManager$LayoutParams;->type:I
     const/16 v9, 0x28
     iput v9, v8, Landroid/view/WindowManager$LayoutParams;->flags:I
-    # Gravity: TOP | END = 0x53 (top-right corner)
-    const/16 v9, 0x53
+    # Gravity: TOP | END = 0x35 (top-right corner)
+    const/16 v9, 0x35
     iput v9, v8, Landroid/view/WindowManager$LayoutParams;->gravity:I
     # Small margin from top-right corner
     const/16 v9, 0x8

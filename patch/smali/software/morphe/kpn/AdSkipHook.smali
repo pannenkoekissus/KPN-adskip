@@ -155,28 +155,57 @@
     invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V
 
     invoke-static {p0}, Lsoftware/morphe/kpn/AdSkipButton;->setVisibility(Z)V
+
+    # Start the 1Hz PiP watcher while playing: guaranteed overlay hide/show on
+    # PiP entry/exit even if onPictureInPictureModeChanged never fires.
+    if-eqz p0, :end
+    invoke-static {}, Lsoftware/morphe/kpn/AdSkipPipWatcher;->schedule()V
+    :end
     return-void
 .end method
 
 .method public static setPipMode(Z)V
-    .registers 3
+    .registers 4
     .param p0, "inPipMode"    # Z
 
     sput-boolean p0, Lsoftware/morphe/kpn/AdSkipHook;->isInPipMode:Z
 
-    # If entering PiP, hide overlay; if exiting, let setPlaying decide
-    if-eqz p0, :return
-    sget-object v0, Lsoftware/morphe/kpn/AdSkipButton;->overlayView:Landroid/view/View;
-    if-eqz v0, :return
-    const/16 v1, 0x8
-    invoke-virtual {v0, v1}, Landroid/view/View;->setVisibility(I)V
-    :return
+    new-instance v0, Ljava/lang/StringBuilder;
+    invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
+    const-string v1, "setPipMode("
+    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v0, p0}, Ljava/lang/StringBuilder;->append(Z)Ljava/lang/StringBuilder;
+    const-string v1, ")"
+    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v0
+    invoke-static {v0}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V
+
+    # Entering PiP: hide overlay immediately via setVisibility(true) — the PiP
+    # guard inside setVisibility (flag just set above) hides the view. Playing
+    # state does NOT change on PiP entry, so no other event would hide it.
+    # Exiting PiP: restore overlay to match the actual playing state.
+    # (Routing through the public setVisibility avoids any cross-class field
+    # access — AdSkipButton.overlayView is private.)
+    if-eqz p0, :exit_pip
+    invoke-static {p0}, Lsoftware/morphe/kpn/AdSkipButton;->setVisibility(Z)V
+    return-void
+
+    :exit_pip
+    sget-boolean v1, Lsoftware/morphe/kpn/AdSkipHook;->isPlaying:Z
+    invoke-static {v1}, Lsoftware/morphe/kpn/AdSkipButton;->setVisibility(Z)V
     return-void
 .end method
 
 .method public static isInPipMode()Z
     .registers 1
     sget-boolean v0, Lsoftware/morphe/kpn/AdSkipHook;->isInPipMode:Z
+    return v0
+.end method
+
+.method public static isPlaying()Z
+    .registers 1
+    sget-boolean v0, Lsoftware/morphe/kpn/AdSkipHook;->isPlaying:Z
     return v0
 .end method
 
