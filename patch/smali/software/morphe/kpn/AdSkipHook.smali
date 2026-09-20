@@ -110,13 +110,22 @@
 .end method
 
 .method public static registerActivity(Landroid/app/Activity;)V
-    .registers 2
+    .registers 5
     .param p0, "act"    # Landroid/app/Activity;
 
     if-eqz p0, :cond_0
     new-instance v0, Ljava/lang/ref/WeakReference;
     invoke-direct {v0, p0}, Ljava/lang/ref/WeakReference;-><init>(Ljava/lang/Object;)V
     sput-object v0, Lsoftware/morphe/kpn/AdSkipHook;->activeActivity:Ljava/lang/ref/WeakReference;
+
+    invoke-virtual {p0}, Landroid/app/Activity;->getWindow()Landroid/view/Window;
+    move-result-object v0
+    invoke-virtual {v0}, Landroid/view/Window;->getDecorView()Landroid/view/View;
+    move-result-object v0
+    new-instance v1, Lsoftware/morphe/kpn/AdSkipOverlayTask;
+    invoke-direct {v1, p0}, Lsoftware/morphe/kpn/AdSkipOverlayTask;-><init>(Landroid/app/Activity;)V
+    const-wide/16 v2, 0x7d0
+    invoke-virtual {v0, v1, v2, v3}, Landroid/view/View;->postDelayed(Ljava/lang/Runnable;J)Z
 
     :cond_0
     return-void
@@ -315,7 +324,6 @@
     return v0
 
     :cond_0
-    # Log key event to /sdcard + logcat
     new-instance v2, Ljava/lang/StringBuilder;
     invoke-direct {v2}, Ljava/lang/StringBuilder;-><init>()V
     const-string v3, "KEYDOWN code="
@@ -325,54 +333,63 @@
     move-result-object v2
     invoke-static {v2}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V
 
-    # Key 0x5a (90: KEYCODE_MEDIA_FAST_FORWARD) or 0x57 (87: KEYCODE_MEDIA_NEXT)
+    # Forward: 0x5a(90) MEDIA_FAST_FORWARD, 0x57(87) MEDIA_NEXT,
+    #          0x16(22) DPAD_RIGHT, 0x22(34) F
     const/16 v0, 0x5a
-    if-eq p0, v0, :cond_skip_30s
+    if-eq p0, v0, :do_forward
     const/16 v0, 0x57
-    if-ne p0, v0, :cond_check_rewind
+    if-eq p0, v0, :do_forward
+    const/16 v0, 0x16
+    if-eq p0, v0, :do_forward
+    const/16 v0, 0x22
+    if-eq p0, v0, :do_forward
 
-:cond_skip_30s
-    const-wide/16 v0, 0x7530    # +30,000 ms
-    invoke-static {v0, v1}, Lsoftware/morphe/kpn/AdSkipHook;->relativeJump(J)V
-    const/4 v0, 0x1
-    return v0
-
-:cond_check_rewind
-    # Key 0x59 (89: KEYCODE_MEDIA_REWIND) or 0x58 (88: KEYCODE_MEDIA_PREVIOUS)
+    # Rewind: 0x59(89) MEDIA_REWIND, 0x58(88) MEDIA_PREVIOUS,
+    #         0x15(21) DPAD_LEFT, 0x2e(46) R
     const/16 v0, 0x59
-    if-eq p0, v0, :cond_skip_back
+    if-eq p0, v0, :do_rewind
     const/16 v0, 0x58
-    if-ne p0, v0, :cond_check_adbreak
+    if-eq p0, v0, :do_rewind
+    const/16 v0, 0x15
+    if-eq p0, v0, :do_rewind
+    const/16 v0, 0x2e
+    if-eq p0, v0, :do_rewind
 
-:cond_skip_back
-    const-wide/16 v0, -0x3a98    # -15,000 ms
+    # Skip ad: 0x2f(47) S, 0x1d(29) A, 0x55(85) MEDIA_PLAY_PAUSE
+    const/16 v0, 0x2f
+    if-eq p0, v0, :do_skip_ad
+    const/16 v0, 0x1d
+    if-eq p0, v0, :do_skip_ad
+    const/16 v0, 0x55
+    if-eq p0, v0, :do_skip_ad
+
+    # Undo: 0x36(54) Z
+    const/16 v0, 0x36
+    if-eq p0, v0, :do_undo
+
+    const/4 v0, 0x0
+    return v0
+
+    :do_forward
+    const-wide/16 v0, 0x7530
     invoke-static {v0, v1}, Lsoftware/morphe/kpn/AdSkipHook;->relativeJump(J)V
     const/4 v0, 0x1
     return v0
 
-:cond_check_adbreak
-    # Key 0x2f (47: KEYCODE_S) or 0x1d (29: KEYCODE_A)
-    const/16 v0, 0x2f
-    if-eq p0, v0, :cond_skip_ad
-    const/16 v0, 0x1d
-    if-ne p0, v0, :cond_check_undo
+    :do_rewind
+    const-wide/16 v0, -0x3a98
+    invoke-static {v0, v1}, Lsoftware/morphe/kpn/AdSkipHook;->relativeJump(J)V
+    const/4 v0, 0x1
+    return v0
 
-:cond_skip_ad
+    :do_skip_ad
     invoke-static {}, Lsoftware/morphe/kpn/AdSkipHook;->skipAdBreak()V
     const/4 v0, 0x1
     return v0
 
-:cond_check_undo
-    # Key 0x36 (54: KEYCODE_Z)
-    const/16 v0, 0x36
-    if-ne p0, v0, :cond_default
-
+    :do_undo
     invoke-static {}, Lsoftware/morphe/kpn/AdSkipHook;->undoLastJump()V
     const/4 v0, 0x1
-    return v0
-
-:cond_default
-    const/4 v0, 0x0
     return v0
 .end method
 

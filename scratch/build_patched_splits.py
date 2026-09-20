@@ -201,6 +201,8 @@ def verify_patches_present():
     """
     markers = {
         b"Lsoftware/morphe/kpn/AdSkipHook;": "AdSkipHook class",
+        b"Lsoftware/morphe/kpn/AdSkipButton;": "AdSkipButton overlay",
+        b"Lsoftware/morphe/kpn/AdSkipOverlayTask;": "AdSkipOverlayTask delay",
         b"onKeyDown": "MainActivity key routing",
     }
     dex_blob = b""
