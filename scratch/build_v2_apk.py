@@ -101,6 +101,39 @@ def patch_main_activity():
     invoke-static {p0}, Lsoftware/morphe/kpn/AdSkipHook;->registerActivity(Landroid/app/Activity;)V"""
 
     content = content.replace(target, injection, 1)
+
+    # Add onPictureInPictureModeChanged hook
+    pip_target = ".method public onPictureInPictureModeChanged(Z)V"
+    if pip_target in content:
+        # Hook existing method
+        import re as _re
+        # Find the method body start
+        m = _re.search(_re.escape(pip_target) + r'\n(\s*\.locals \d+)', content)
+        if m:
+            locals_line = m.group(1)
+            pip_injection = locals_line + """
+
+    # === KPN TV+ AdSkip Hook: notify PiP mode change ===
+    invoke-static {p1}, Lsoftware/morphe/kpn/AdSkipHook;->setPipMode(Z)V"""
+            content = content.replace(locals_line, pip_injection, 1)
+            print("  Patched existing onPictureInPictureModeChanged")
+    else:
+        # Add new method before the last .end class
+        pip_method = """
+
+# === KPN TV+ AdSkip Hook: PiP mode change callback ===
+.method public onPictureInPictureModeChanged(Z)V
+    .locals 1
+
+    invoke-super {p0, p1}, Landroid/app/Activity;->onPictureInPictureModeChanged(Z)V
+
+    invoke-static {p1}, Lsoftware/morphe/kpn/AdSkipHook;->setPipMode(Z)V
+    return-void
+.end method
+"""
+        content = content.replace(".end class", pip_method + "\n.end class")
+        print("  Added onPictureInPictureModeChanged hook")
+
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
     print("Patched MainActivity.smali")

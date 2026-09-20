@@ -23,6 +23,8 @@
 
 .field private static isPlaying:Z
 
+.field private static isInPipMode:Z
+
 .field private static overlayView:Landroid/view/View;
 
 
@@ -154,6 +156,28 @@
 
     invoke-static {p0}, Lsoftware/morphe/kpn/AdSkipButton;->setVisibility(Z)V
     return-void
+.end method
+
+.method public static setPipMode(Z)V
+    .registers 3
+    .param p0, "inPipMode"    # Z
+
+    sput-boolean p0, Lsoftware/morphe/kpn/AdSkipHook;->isInPipMode:Z
+
+    # If entering PiP, hide overlay; if exiting, let setPlaying decide
+    if-eqz p0, :return
+    sget-object v0, Lsoftware/morphe/kpn/AdSkipButton;->overlayView:Landroid/view/View;
+    if-eqz v0, :return
+    const/16 v1, 0x8
+    invoke-virtual {v0, v1}, Landroid/view/View;->setVisibility(I)V
+    :return
+    return-void
+.end method
+
+.method public static isInPipMode()Z
+    .registers 1
+    sget-boolean v0, Lsoftware/morphe/kpn/AdSkipHook;->isInPipMode:Z
+    return v0
 .end method
 
 .method public static registerSeek(J)V

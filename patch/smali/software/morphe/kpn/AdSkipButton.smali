@@ -17,17 +17,11 @@
     .registers 4
     .param p0, "visible"    # Z
 
-    # If hiding, skip PiP check
+    # If showing, check PiP mode
     if-eqz p0, :do_set
 
-    # Check if in PiP mode — don't show overlay in PiP
-    sget-object v0, Lsoftware/morphe/kpn/AdSkipHook;->activeActivity:Ljava/lang/ref/WeakReference;
-    if-eqz v0, :do_set
-    invoke-virtual {v0}, Ljava/lang/ref/WeakReference;->get()Ljava/lang/Object;
-    move-result-object v0
-    if-eqz v0, :do_set
-    check-cast v0, Landroid/app/Activity;
-    invoke-virtual {v0}, Landroid/app/Activity;->isInPictureInPictureMode()Z
+    # Check PiP mode from AdSkipHook
+    invoke-static {}, Lsoftware/morphe/kpn/AdSkipHook;->isInPipMode()Z
     move-result v0
     if-eqz v0, :do_set
     # In PiP — hide overlay and bail
@@ -84,8 +78,8 @@
 
     if-eqz p0, :end
 
-    # Check PiP — don't create overlay in PiP
-    invoke-virtual {p0}, Landroid/app/Activity;->isInPictureInPictureMode()Z
+    # Check PiP mode from AdSkipHook
+    invoke-static {}, Lsoftware/morphe/kpn/AdSkipHook;->isInPipMode()Z
     move-result v0
     if-eqz v0, :not_pip
     return-void
@@ -105,12 +99,12 @@
     # Semi-transparent dark background
     const v3, -0x66000000
     invoke-virtual {v1, v3}, Landroid/widget/LinearLayout;->setBackgroundColor(I)V
-    # Small padding: 6px all sides
-    const/4 v3, 0x6
+    # Very small padding: 3px all sides
+    const/4 v3, 0x3
     invoke-virtual {v1, v3, v3, v3, v3}, Landroid/widget/LinearLayout;->setPadding(IIII)V
 
-    # Button size: 10sp text, white text color
-    const/high16 v3, 0x41200000    # 10.0f (10sp)
+    # Button size: 9sp text
+    const/high16 v3, 0x41100000    # 9.0f (9sp)
 
     # << button (rewind 15s)
     new-instance v4, Landroid/widget/Button;
@@ -124,35 +118,45 @@
     invoke-virtual {v4, v5}, Landroid/widget/Button;->setOnClickListener(Landroid/view/View$OnClickListener;)V
     invoke-virtual {v1, v4}, Landroid/widget/LinearLayout;->addView(Landroid/view/View;)V
 
-    # SKIP button (skip ad break)
+    # SKIP button (skip ad break) - smaller
     new-instance v4, Landroid/widget/Button;
     invoke-direct {v4, p0}, Landroid/widget/Button;-><init>(Landroid/content/Context;)V
     const-string v5, "SKIP"
     invoke-virtual {v4, v5}, Landroid/widget/Button;->setText(Ljava/lang/CharSequence;)V
-    invoke-virtual {v4, v3}, Landroid/widget/Button;->setTextSize(F)V
+    const/high16 v6, 0x41080000    # 8.0f
+    invoke-virtual {v4, v6}, Landroid/widget/Button;->setTextSize(F)V
+    # Minimal horizontal padding
+    const/4 v6, 0x4
+    invoke-virtual {v4, v6, v6, v6, v6}, Landroid/widget/Button;->setPadding(IIII)V
     new-instance v5, Lsoftware/morphe/kpn/AdSkipButton;
     invoke-direct {v5, v2}, Lsoftware/morphe/kpn/AdSkipButton;-><init>(I)V
     invoke-virtual {v4, v5}, Landroid/widget/Button;->setOnClickListener(Landroid/view/View$OnClickListener;)V
     invoke-virtual {v1, v4}, Landroid/widget/LinearLayout;->addView(Landroid/view/View;)V
 
-    # >> button (forward 30s)
+    # >> button (forward 30s) - smaller
     new-instance v4, Landroid/widget/Button;
     invoke-direct {v4, p0}, Landroid/widget/Button;-><init>(Landroid/content/Context;)V
     const-string v5, "\u00bb"
     invoke-virtual {v4, v5}, Landroid/widget/Button;->setText(Ljava/lang/CharSequence;)V
-    invoke-virtual {v4, v3}, Landroid/widget/Button;->setTextSize(F)V
+    const/high16 v6, 0x41100000    # 9.0f
+    invoke-virtual {v4, v6}, Landroid/widget/Button;->setTextSize(F)V
+    const/4 v6, 0x4
+    invoke-virtual {v4, v6, v6, v6, v6}, Landroid/widget/Button;->setPadding(IIII)V
     new-instance v5, Lsoftware/morphe/kpn/AdSkipButton;
     const/4 v6, 0x2
     invoke-direct {v5, v6}, Lsoftware/morphe/kpn/AdSkipButton;-><init>(I)V
     invoke-virtual {v4, v5}, Landroid/widget/Button;->setOnClickListener(Landroid/view/View$OnClickListener;)V
     invoke-virtual {v1, v4}, Landroid/widget/LinearLayout;->addView(Landroid/view/View;)V
 
-    # UNDO button
+    # UNDO button - smaller
     new-instance v4, Landroid/widget/Button;
     invoke-direct {v4, p0}, Landroid/widget/Button;-><init>(Landroid/content/Context;)V
     const-string v5, "UNDO"
     invoke-virtual {v4, v5}, Landroid/widget/Button;->setText(Ljava/lang/CharSequence;)V
-    invoke-virtual {v4, v3}, Landroid/widget/Button;->setTextSize(F)V
+    const/high16 v6, 0x41080000    # 8.0f
+    invoke-virtual {v4, v6}, Landroid/widget/Button;->setTextSize(F)V
+    const/4 v6, 0x4
+    invoke-virtual {v4, v6, v6, v6, v6}, Landroid/widget/Button;->setPadding(IIII)V
     new-instance v5, Lsoftware/morphe/kpn/AdSkipButton;
     const/4 v6, 0x3
     invoke-direct {v5, v6}, Lsoftware/morphe/kpn/AdSkipButton;-><init>(I)V
@@ -170,10 +174,10 @@
     iput v9, v8, Landroid/view/WindowManager$LayoutParams;->type:I
     const/16 v9, 0x28
     iput v9, v8, Landroid/view/WindowManager$LayoutParams;->flags:I
-    # Gravity: BOTTOM | END = 0x55
-    const/16 v9, 0x55
+    # Gravity: TOP | END = 0x53 (top-right corner)
+    const/16 v9, 0x53
     iput v9, v8, Landroid/view/WindowManager$LayoutParams;->gravity:I
-    # Small margin from bottom-right corner
+    # Small margin from top-right corner
     const/16 v9, 0x8
     iput v9, v8, Landroid/view/WindowManager$LayoutParams;->x:I
     const/16 v9, 0x50
