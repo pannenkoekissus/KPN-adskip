@@ -390,6 +390,120 @@
     return-void
 .end method
 
+.method public static getCurrentPositionMs()J
+    .registers 8
+
+    invoke-static {}, Lsoftware/morphe/kpn/AdSkipHook;->getExoPlayer()Ljava/lang/Object;
+    move-result-object v0
+    if-nez v0, :cond_0
+
+    :try_start_0
+    invoke-virtual {v0}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+    move-result-object v1
+
+    const-string v2, "getCurrentPosition"
+    const/4 v3, 0x0
+    new-array v4, v3, [Ljava/lang/Class;
+    invoke-virtual {v1, v2, v4}, Ljava/lang/Class;->getMethod(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;
+    move-result-object v1
+
+    new-array v4, v3, [Ljava/lang/Object;
+    invoke-virtual {v1, v0, v4}, Ljava/lang/reflect/Method;->invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;
+    move-result-object v1
+    check-cast v1, Ljava/lang/Long;
+    invoke-virtual {v1}, Ljava/lang/Long;->longValue()J
+    move-result-wide v0
+    return-wide v0
+    :try_end_0
+    .catchall {:try_start_0 .. :try_end_0} :catchall_0
+
+    :catchall_0
+    :cond_0
+    const-wide/16 v0, 0x0
+    return-wide v0
+.end method
+
+.method public static getDurationMs()J
+    .registers 8
+
+    invoke-static {}, Lsoftware/morphe/kpn/AdSkipHook;->getExoPlayer()Ljava/lang/Object;
+    move-result-object v0
+    if-nez v0, :cond_0
+
+    :try_start_0
+    invoke-virtual {v0}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+    move-result-object v1
+
+    const-string v2, "getDuration"
+    const/4 v3, 0x0
+    new-array v4, v3, [Ljava/lang/Class;
+    invoke-virtual {v1, v2, v4}, Ljava/lang/Class;->getMethod(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;
+    move-result-object v1
+
+    new-array v4, v3, [Ljava/lang/Object;
+    invoke-virtual {v1, v0, v4}, Ljava/lang/reflect/Method;->invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;
+    move-result-object v1
+    check-cast v1, Ljava/lang/Long;
+    invoke-virtual {v1}, Ljava/lang/Long;->longValue()J
+    move-result-wide v0
+    return-wide v0
+    :try_end_0
+    .catchall {:try_start_0 .. :try_end_0} :catchall_0
+
+    :catchall_0
+    :cond_0
+    const-wide/16 v0, 0x0
+    return-wide v0
+.end method
+
+.method public static seekToPosition(J)V
+    .registers 8
+    .param p0, "targetMs"    # J
+
+    invoke-static {}, Lsoftware/morphe/kpn/AdSkipHook;->getExoPlayer()Ljava/lang/Object;
+    move-result-object v0
+    if-nez v0, :cond_0
+    return-void
+
+    :cond_0
+    :try_start_0
+    invoke-virtual {v0}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
+    move-result-object v1
+
+    const-string v2, "seekTo"
+    const/4 v3, 0x1
+    new-array v4, v3, [Ljava/lang/Class;
+    sget-object v5, Ljava/lang/Long;->TYPE:Ljava/lang/Class;
+    const/4 v3, 0x0
+    aput-object v5, v4, v3
+
+    invoke-virtual {v1, v2, v4}, Ljava/lang/Class;->getMethod(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;
+    move-result-object v1
+
+    const/4 v3, 0x1
+    new-array v2, v3, [Ljava/lang/Object;
+    invoke-static {p0, p1}, Ljava/lang/Long;->valueOf(J)Ljava/lang/Long;
+    move-result-object v4
+    const/4 v3, 0x0
+    aput-object v4, v2, v3
+
+    invoke-virtual {v1, v0, v2}, Ljava/lang/reflect/Method;->invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;
+
+    new-instance v2, Ljava/lang/StringBuilder;
+    invoke-direct {v2}, Ljava/lang/StringBuilder;-><init>()V
+    const-string v3, "A11Y_SEEK_ABS target="
+    invoke-virtual {v2, v3}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+    invoke-virtual {v2, p0, p1}, Ljava/lang/StringBuilder;->append(J)Ljava/lang/StringBuilder;
+    invoke-virtual {v2}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+    move-result-object v2
+    invoke-static {v2}, Lsoftware/morphe/kpn/AdSkipHook;->log(Ljava/lang/String;)V
+    :try_end_0
+    .catchall {:try_start_0 .. :try_end_0} :catchall_0
+
+    :catchall_0
+    return-void
+.end method
+
 .method public static onKeyDown(ILandroid/view/KeyEvent;)Z
     .registers 6
     .param p0, "keyCode"    # I

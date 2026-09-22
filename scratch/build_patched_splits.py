@@ -59,6 +59,9 @@ REGENERATED_OUTPUTS = [
 
 PATCH_HOOK_SRC = os.path.join(REPO_ROOT, "patch", "smali", "software", "morphe", "kpn", "AdSkipHook.smali")
 
+# Binary-AXML manifest patcher (injects the accessibility <service>).
+import axml
+
 PRISTINE_BASE = os.path.join(WORK_DIR, "base.apk")
 BASE_DECOMPILED = os.path.join(WORK_DIR, "base_decompiled")
 PATCHED_BASE_UNSIGNED = os.path.join(WORK_DIR, "patched_base.apk")
@@ -172,10 +175,27 @@ def rebuild_base():
 
     # apktool re-encodes AndroidManifest.xml from text. That re-encode has been
     # observed to produce a malformed manifest on this app -> INSTALL_FAILED_INVALID_APK.
-    # Swap in the ORIGINAL binary manifest from the pristine base.apk instead
-    # (it carries the correct resource-ID references for the unmodified arsc).
+    # Swap in a surgically-patched version of the ORIGINAL binary manifest: first
+    # inject the accessibility <service> (binary AXML edit), keeping every other
+    # byte of the pristine manifest intact.
     with zipfile.ZipFile(PRISTINE_BASE) as zin:
         orig_manifest = zin.read("AndroidManifest.xml")
+    patched_manifest = axml.add_accessibility_service(orig_manifest)
+    if not axml.verify(patched_manifest):
+        raise SystemExit(
+            "FATAL: injected accessibility <service> not found in rebuilt "
+            "AndroidManifest.xml - binary AXML edit failed. Aborting before signing."
+        )
+    # Strict structural validation: chunk walk, string-pool bounds for every
+    # string, balanced element tree, resource map length, and a round-trip check
+    # that EVERY pre-existing string still decodes to the same text. Catches a
+    # corrupt manifest before it reaches the device.
+    axml.validate_manifest(patched_manifest, original=orig_manifest)
+    pool = axml.pool_info(patched_manifest)
+    log(
+        f"  A11Y <service> injected into binary manifest "
+        f"(pool utf8={pool['utf8']} strings={pool['ncount']} flags={pool['flags']:#x})"
+    )
     tmp = PATCHED_BASE_UNSIGNED + ".reman"
     with zipfile.ZipFile(PATCHED_BASE_UNSIGNED) as zin:
         with zipfile.ZipFile(tmp, "w") as zout:
@@ -184,10 +204,10 @@ def rebuild_base():
                     continue
                 data = zin.read(item.filename)
                 if item.filename == "AndroidManifest.xml":
-                    data = orig_manifest
+                    data = patched_manifest
                 zout.writestr(item, data)
     os.replace(tmp, PATCHED_BASE_UNSIGNED)
-    log(f"  Swapped in original binary AndroidManifest.xml ({len(orig_manifest)} bytes)")
+    log(f"  Replaced AndroidManifest.xml ({len(patched_manifest)} bytes, was {len(orig_manifest)})")
 
     verify_patches_present()
 
@@ -205,6 +225,8 @@ def verify_patches_present():
         b"Lsoftware/morphe/kpn/AdSkipButton;": "AdSkipButton overlay",
         b"Lsoftware/morphe/kpn/AdSkipOverlayTask;": "AdSkipOverlayTask delay",
         b"Lsoftware/morphe/kpn/AdSkipPipWatcher;": "AdSkipPipWatcher PiP polling",
+        b"Lsoftware/morphe/kpn/AdSkipAccessibilityService;": "AdSkipAccessibilityService a11y",
+        b"Lsoftware/morphe/kpn/AdSkipForwardGate;": "AdSkipForwardGate delay",
         b"onKeyDown": "MainActivity key routing",
     }
     dex_blob = b""
@@ -219,7 +241,7 @@ def verify_patches_present():
             + ", ".join(missing)
             + " - smali patches were not applied. Aborting before signing a stock build."
         )
-    log("  Verified: AdSkipHook + key routing present in rebuilt dex")
+    log("  Verified: AdSkipHook + key routing + a11y service present in rebuilt dex")
 
 
 def ensure_debug_keystore():

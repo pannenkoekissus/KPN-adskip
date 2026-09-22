@@ -86,6 +86,18 @@ def patch_adskip_hook():
         shutil.copy2(watcher_src, watcher_dst)
         print("Copied AdSkipPipWatcher.smali to:", watcher_dst)
 
+    a11y_src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "patch", "smali", "software", "morphe", "kpn", "AdSkipAccessibilityService.smali")
+    a11y_dst = os.path.join(hook_dir, "AdSkipAccessibilityService.smali")
+    if os.path.exists(a11y_src):
+        shutil.copy2(a11y_src, a11y_dst)
+        print("Copied AdSkipAccessibilityService.smali to:", a11y_dst)
+
+    gate_src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "patch", "smali", "software", "morphe", "kpn", "AdSkipForwardGate.smali")
+    gate_dst = os.path.join(hook_dir, "AdSkipForwardGate.smali")
+    if os.path.exists(gate_src):
+        shutil.copy2(gate_src, gate_dst)
+        print("Copied AdSkipForwardGate.smali to:", gate_dst)
+
 def patch_main_activity():
     print(">>> Patching MainActivity.smali (guaranteed startup AdSkipHook hook)...")
     path = os.path.join(DECOMPILED, "smali_classes3", "com", "kpn", "tvplusapp", "MainActivity.smali")
