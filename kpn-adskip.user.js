@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         KPN TV+ RTL AdSkip & Unblocker
 // @namespace    https://github.com/kpn-adskip
-// @version      2.1.0
+// @version      2.2.0
 // @description  Omzeilt RTL reclameblokkades op KPN TV+, deblokkeert doorspoelen en detecteert en springt in 1 keer over reclames heen.
 // @author       KPN AdSkip
 // @match        *://*.tv.kpn.com/*
@@ -21,14 +21,21 @@
   const nativeDurationGetter = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "duration").get;
 
   const CONFIG = {
-    defaultAdBreakSeconds: 300, // 5:00 minuten (standaard RTL tv-reclameblok)
-    autoSkipPreRoll: true,      // Direct over reclamebuffer vóór programmastart springen
-    silenceThreshold: 0.015,    // Drempelwaarde voor stiltedetectie
-    enableAudioDetection: true  // Web Audio API volumemonitoring
+    defaultAdBreakSeconds: 300,  // 5:00 minuten (standaard RTL tv-reclameblok)
+    autoSkipPreRoll: true,       // Direct over reclamebuffer vóór programmastart springen
+    preRollGraceMs: 5000,        // Wachttijd nadat de speler echt afspeelt, voordat een pre-roll wordt overgeslagen
+    preRollResumeThreshold: 60,  // Staat de speler verder dan dit, dan gaan we uit van hervatten
+    silenceThreshold: 0.015,     // Drempelwaarde voor stiltedetectie
+    enableAudioDetection: true   // Web Audio API volumemonitoring
   };
 
   let previousPosition = null;
   let hasSkippedPreRoll = false;
+  let trackedVideo = null;
+  let trackedSource = null;
+  let playbackStartedAt = 0;
+  let furthestPosition = 0;
+  let wasPlaying = false;
   let audioContext = null;
   let analyserNode = null;
   let audioSource = null;
@@ -124,14 +131,53 @@
   }
 
   /**
+   * Volgt het video-element, de bron en de afspeelstatus.
+   * Hiermee herkennen we een hervat-positie (opgeslagen kijkpunt) zodat we
+   * niet onterecht naar het begin van het programma terugspringen.
+   */
+  function trackPlaybackState(video) {
+    const source = video.currentSrc || video.src || "";
+
+    if (video !== trackedVideo || source !== trackedSource) {
+      trackedVideo = video;
+      trackedSource = source;
+      hasSkippedPreRoll = false;
+      playbackStartedAt = 0;
+      furthestPosition = 0;
+      wasPlaying = false;
+      console.log("[KPN TV+ AdSkip] 🔄 Nieuwe video/bron gedetecteerd, pre-roll monitoring herstart.");
+    }
+
+    const current = nativeGetter.call(video);
+    if (current > furthestPosition) furthestPosition = current;
+
+    const playing = !video.paused && video.readyState >= 3;
+    if (playing && !wasPlaying) {
+      wasPlaying = true;
+      if (!playbackStartedAt) {
+        playbackStartedAt = performance.now();
+        console.log(`[KPN TV+ AdSkip] ▶️ Afspelen gestart op ${formatTime(current)}.`);
+      }
+    } else if (!playing) {
+      wasPlaying = false;
+    }
+
+    return current;
+  }
+
+  /**
    * Pre-roll reclame detectie & single-jump naar programmastart
    * De seekbar start-marker (.shaka_seek-bar-marker_start) geeft de officiële start van het programma aan.
+   * Wordt alleen overgeslagen als de video echt nog bij het begin van het ad-blok staat;
+   * bij een hervat kijkpunt verderop in het programma gebeurt er niets.
    */
   function checkAndSkipPreRoll() {
     if (!CONFIG.autoSkipPreRoll || hasSkippedPreRoll) return;
 
     const video = document.querySelector("video");
-    if (!video || !video.duration) return;
+    if (!video || !video.duration || !isFinite(video.duration)) return;
+
+    const current = trackPlaybackState(video);
 
     const startMarker = document.querySelector(".shaka_seek-bar-marker_start");
     if (!startMarker || !startMarker.style.left) return;
@@ -140,7 +186,21 @@
     if (isNaN(pct) || pct <= 0) return;
 
     const programStartTime = (pct / 100) * video.duration;
-    const current = nativeGetter.call(video);
+
+    // We staan (of stonden) al voorbij het begin van het programma: dit is een hervat-positie.
+    if (furthestPosition >= programStartTime - 5) {
+      hasSkippedPreRoll = true;
+      console.log(`[KPN TV+ AdSkip] ▶️ Kijkpunt hervat op ${formatTime(furthestPosition)}, geen pre-roll overslag.`);
+      return;
+    }
+
+    // De speler moet daadwerkelijk afspelen voordat we iets mogen doen.
+    if (!playbackStartedAt) return;
+
+    // Geef de speler tijd om het opgeslagen kijkpunt te herstellen.
+    // Ligt de positie al verder dan de hervat-drempel, dan is die hersteld en wachten we niet.
+    const resumed = furthestPosition >= CONFIG.preRollResumeThreshold;
+    if (!resumed && performance.now() - playbackStartedAt < CONFIG.preRollGraceMs) return;
 
     if (current < programStartTime - 5) {
       hasSkippedPreRoll = true;
@@ -413,6 +473,11 @@
       setupAudioAnalysis(video);
     } else {
       hasSkippedPreRoll = false;
+      trackedVideo = null;
+      trackedSource = null;
+      playbackStartedAt = 0;
+      furthestPosition = 0;
+      wasPlaying = false;
     }
   }, 350);
 
