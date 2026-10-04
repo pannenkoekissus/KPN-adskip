@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         KPN TV+ RTL AdSkip & Unblocker
-// @namespace    https://github.com/kpn-adskip
+// @namespace    https://github.com/pannenkoekissus/kpn-adskip
 // @version      2.2.0
 // @description  Omzeilt RTL reclameblokkades op KPN TV+, deblokkeert doorspoelen en detecteert en springt in 1 keer over reclames heen.
 // @author       KPN AdSkip
