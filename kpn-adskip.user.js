@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         KPN TV+ RTL AdSkip & Unblocker
 // @namespace    https://github.com/pannenkoekissus/kpn-adskip
-// @version      2.2.0
+// @version      2.2.1
 // @description  Omzeilt RTL reclameblokkades op KPN TV+, deblokkeert doorspoelen en detecteert en springt in 1 keer over reclames heen.
 // @author       KPN AdSkip
 // @match        *://*.tv.kpn.com/*
@@ -163,50 +163,6 @@
     }
 
     return current;
-  }
-
-  /**
-   * Pre-roll reclame detectie & single-jump naar programmastart
-   * De seekbar start-marker (.shaka_seek-bar-marker_start) geeft de officiële start van het programma aan.
-   * Wordt alleen overgeslagen als de video echt nog bij het begin van het ad-blok staat;
-   * bij een hervat kijkpunt verderop in het programma gebeurt er niets.
-   */
-  function checkAndSkipPreRoll() {
-    if (!CONFIG.autoSkipPreRoll || hasSkippedPreRoll) return;
-
-    const video = document.querySelector("video");
-    if (!video || !video.duration || !isFinite(video.duration)) return;
-
-    const current = trackPlaybackState(video);
-
-    const startMarker = document.querySelector(".shaka_seek-bar-marker_start");
-    if (!startMarker || !startMarker.style.left) return;
-
-    const pct = parseFloat(startMarker.style.left);
-    if (isNaN(pct) || pct <= 0) return;
-
-    const programStartTime = (pct / 100) * video.duration;
-
-    // We staan (of stonden) al voorbij het begin van het programma: dit is een hervat-positie.
-    if (furthestPosition >= programStartTime - 5) {
-      hasSkippedPreRoll = true;
-      console.log(`[KPN TV+ AdSkip] ▶️ Kijkpunt hervat op ${formatTime(furthestPosition)}, geen pre-roll overslag.`);
-      return;
-    }
-
-    // De speler moet daadwerkelijk afspelen voordat we iets mogen doen.
-    if (!playbackStartedAt) return;
-
-    // Geef de speler tijd om het opgeslagen kijkpunt te herstellen.
-    // Ligt de positie al verder dan de hervat-drempel, dan is die hersteld en wachten we niet.
-    const resumed = furthestPosition >= CONFIG.preRollResumeThreshold;
-    if (!resumed && performance.now() - playbackStartedAt < CONFIG.preRollGraceMs) return;
-
-    if (current < programStartTime - 5) {
-      hasSkippedPreRoll = true;
-      console.log(`[KPN TV+ AdSkip] 🎯 Pre-roll reclameblok gedetecteerd. Directe sprong naar programmastart: ${formatTime(programStartTime)}`);
-      jumpTo(programStartTime + 1, "Start programma");
-    }
   }
 
   /**
@@ -469,7 +425,6 @@
       unblockVideoElement(video);
       unblockForwardButton();
       injectControls();
-      checkAndSkipPreRoll();
       setupAudioAnalysis(video);
     } else {
       hasSkippedPreRoll = false;
