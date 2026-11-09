@@ -54,6 +54,35 @@ def main():
         except Exception as e:
             print(f"  SKIP (optional patch target changed in this app version): {mod}: {e}")
 
+    main_vp = os.path.join(DECOMPILED, "smali_classes3", "com", "kpn", "tvplusapp", "MainActivity.smali")
+    if os.path.exists(main_vp):
+        with open(main_vp, "r", encoding="utf-8") as f:
+            content = f.read()
+        if "AdSkipHook;->onKeyDown" in content:
+            print("  MainActivity.smali dispatchKeyEvent: already patched")
+        else:
+            target = ".method public final dispatchKeyEvent(Landroid/view/KeyEvent;)Z\n"
+            if target not in content:
+                print("  WARNING: dispatchKeyEvent not found, remote key shortcuts skipped")
+            else:
+                injection = target + """
+    # === KPN TV+ AdSkip Hook: intercept keys via dispatchKeyEvent ===
+    invoke-virtual {p1}, Landroid/view/KeyEvent;->getKeyCode()I
+    move-result v0
+    invoke-static {v0, p1}, Lsoftware/morphe/kpn/AdSkipHook;->onKeyDown(ILandroid/view/KeyEvent;)Z
+    move-result v0
+    if-eqz v0, :cond_adskip_default
+    const/4 v0, 0x1
+    return v0
+
+    :cond_adskip_default
+
+"""
+                content = content.replace(target, injection, 1)
+                with open(main_vp, "w", encoding="utf-8") as f:
+                    f.write(content)
+                print("  MainActivity.smali dispatchKeyEvent: patched (remote key shortcuts enabled)")
+
     print(">>> [3/6] Injecting armeabi-v7a native libs from split_config.%s.apk..." % ABI)
     lib_dir = os.path.join(DECOMPILED, "lib", ABI)
     os.makedirs(lib_dir, exist_ok=True)
