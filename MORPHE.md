@@ -47,10 +47,15 @@ Done and verified in this repository:
   notes mark the Morphe bundle as recommended for arm64 Android TV and keep the
   apktool bundles as fallbacks.
 
-Still open: the on-device smoke test (section 5.7) and the multi-version CI matrix.
-The Manager import path (DEX entry, both package names) is fixed but not yet
-confirmed in the Manager UI, and no `com.kpn.kpnandroidtv` APK is in the
-repository yet to verify the TV build against.
+The Manager import path is fixed and confirmed: the bundle now carries
+`classes.dex`, and importing it into Morphe Manager 2.6.0 on an API 35 emulator
+adds the source without a warning and lists both `KPN TV+ (mobile)` and
+`KPN TV+ Android TV`. Before the DEX entry was added, Manager logged
+`Unable to open .../patches.dm` and showed neither app.
+
+Still open: the on-device smoke test (section 5.7) and the multi-version CI
+matrix. No `com.kpn.kpnandroidtv` APK is in the repository yet, so the TV build
+is not verified against the real TV app.
 
 Until that passes, the apktool route (`scratch/build_patched_splits.py`) remains the
 known-good fallback.
@@ -278,18 +283,20 @@ break.
 
 ### 5.7 Testing matrix
 
-**Status: open.** The static checks (output DEX contents, `resources.arsc`
-integrity, split payloads, certificate match) are implemented in
-`build_morphe_splits.py`; the on-device smoke test and the multi-version CI matrix
-still have to be run.
+**Status: partially done.** The static checks (output DEX contents,
+`resources.arsc` integrity, split payloads, certificate match) are implemented in
+`build_morphe_splits.py`, and the Morphe Manager import was verified on an
+emulator. The on-device smoke test and the multi-version CI matrix still have to
+be run.
 
 - CI job that, for every supported KPN TV+ version: downloads the base APK, runs
   the patch with `--force --continue-on-error`, asserts from `result.json` that each
   fingerprint resolved, inspects the output DEX for `AdSkipHook`, verifies split
   integrity, and signs it.
 - Import the `.mpp` into Morphe Manager and confirm both KPN apps appear in the
-  source's app list. Manager reads `classes.dex` from the bundle and rejects the
-  whole source when that entry is missing.
+  source's app list. **Verified** with Manager 2.6.0 on an API 35 emulator: no
+  import warning and both apps are listed. Manager reads `classes.dex` from the
+  bundle and rejects the whole source when that entry is missing.
 - Pull `com.kpn.kpnandroidtv` from a TV or the TV+ Box
   (`adb shell pm path com.kpn.kpnandroidtv`, then `adb pull` each path) and run the
   same static checks. The two apps share the `com.kpn.tvplusapp.MainActivity` entry
