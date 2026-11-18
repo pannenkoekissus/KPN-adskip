@@ -3,7 +3,6 @@ import os, shutil, subprocess, zipfile
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 JAVA = r"C:\Program Files\Java\openjdk-22_windows-x64_bin\jdk-22\bin\java.exe"
 SIGNER = os.path.join(REPO_ROOT, "tools", "uber-apk-signer.jar")
-APKTOOL = os.path.join(REPO_ROOT, "tools", "apktool.jar")
 OUT = os.path.join(os.environ.get("TEMP", r"C:\Users\Gebruiker\AppData\Local\Temp"), "opencode", "armv7a_pkgout")
 PKG = os.path.join(os.environ.get("TEMP", r"C:\Users\Gebruiker\AppData\Local\Temp"), "opencode", "armv7a_pkg")
 DEST = os.path.join(REPO_ROOT, "patch", "build", "output", "kpn-tvplus-adskip-armv7a-splits.apks")
@@ -11,25 +10,10 @@ WORK = os.path.join(REPO_ROOT, "scratch", "apk_build")
 
 OUTPUT_DIR = os.path.join(REPO_ROOT, "patch", "build", "output")
 
-ARMEABI_SRC = os.path.join(WORK, "split_config.armeabi_v7a.apk")
-ARMEABI_FIXED = os.path.join(WORK, "split_config.armeabi_v7a_fixed.apk")
-ARMEABI_DEC = os.path.join(WORK, "split_armeabi_dec")
-
-shutil.rmtree(ARMEABI_DEC, ignore_errors=True)
-subprocess.run([JAVA, "-jar", APKTOOL, "d", "-f", "-s", ARMEABI_SRC, "-o", ARMEABI_DEC], check=True, capture_output=True, text=True)
-manifest_path = os.path.join(ARMEABI_DEC, "AndroidManifest.xml")
-with open(manifest_path, encoding="utf-8") as f:
-    manifest = f.read()
-manifest = manifest.replace('android:versionCode="302360"', 'android:versionCode="21321" android:versionName="09.01.00"')
-manifest = manifest.replace('package="com.kpn.kpnandroidtv"', 'package="com.kpn.epg"')
-with open(manifest_path, "w", encoding="utf-8") as f:
-    f.write(manifest)
-subprocess.run([JAVA, "-jar", APKTOOL, "b", "-s", ARMEABI_DEC, "-o", ARMEABI_FIXED], check=True, capture_output=True, text=True)
-
 items = [
     ("patched_base.apk", os.path.join(OUTPUT_DIR, "kpn-tvplus-adskip-armv7a-aligned-debugSigned.apk")),
     ("split_config.arm64_v8a.apk", os.path.join(WORK, "split_config.arm64_v8a.apk")),
-    ("split_config.armeabi_v7a.apk", ARMEABI_FIXED),
+    ("split_config.armeabi_v7a.apk", os.path.join(WORK, "split_config.armeabi_v7a.apk")),
     ("split_config.xxhdpi.apk", os.path.join(WORK, "split_config.xxhdpi.apk")),
     ("split_config.nl.apk", os.path.join(WORK, "split_config.nl.apk")),
 ]
