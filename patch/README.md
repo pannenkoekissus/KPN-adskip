@@ -2,6 +2,11 @@
 
 This repository contains the version-independent patch implementation for **KPN TV+ (`com.kpn.epg`)** on Android / Android TV.
 
+> **Morphe status:** the Morphe route below is not yet working. See
+> [MORPHE.md](../MORPHE.md) for the verified blockers, the corrected CLI syntax,
+> and the plan to make the patch buildable and version-independent with Morphe.
+> Method B (apktool) is the known-good route for now.
+
 ---
 
 ## 1. Why This Patch Works Across Multiple Versions
