@@ -10,15 +10,58 @@ passed through. Play/Pause being bound is not a defect.
 
 ---
 
+## 0. Implementation status
+
+Done and verified in this repository:
+
+- `patch/` has a Gradle 8.9 wrapper and a build that emits
+  `patch/build/output/kpn-tvplus-adskip.mpp` (a loadable Morphe bundle with the
+  smali extension packaged as `extensions/kpn.mpe`).
+- The GitHub Packages registry (401 without `read:packages` credentials) is worked
+  around by compiling against the patcher bundled inside the Morphe Desktop CLI jar
+  (`-PmorpheDesktopJar=...` / `MORPHE_DESKTOP_JAR`).
+- `KpnAdSkipPatch.kt` implements all hooks with tolerant discovery (class names,
+  method shapes, field types and string literals) and warns instead of aborting on
+  a miss: `dispatchKeyEvent`, `onCreate`, PiP callback, `VideoPlayer.seekTo` /
+  `<init>` / lifecycle, ExoPlayer field registrations, `onIsPlayingChanged`, the
+  ExoPlayer ad-seek guard, IMA `skippable()` and the Flutter security checks
+  (`isRooted`, `isRealDevice`, `hasCorrectlyInstalled`, `isJailBroken`,
+  `isDevelopmentModeEnable`, `usbDebuggingCheck`). The security bypasses answer
+  `MethodChannel.Result` directly, matching the known-good apktool patch.
+- `scratch/build_morphe_splits.py` implements section 5.5: patch `base.apk` only,
+  keep the config splits' payload byte-identical, sign all splits with one
+  certificate and write
+  `patch/build/output/kpn-tvplus-adskip-morphe-splits.apks`.
+- The output DEX was inspected: `AdSkipHook` + the five other extension classes,
+  the `dispatchKeyEvent` hook, `seekTo` hook, `ExoPlayerImpl.h()Z → false`,
+  `AutoValue_AdData.skippable() → TRUE` and all seven security-check early
+  returns are present, and `resources.arsc` in the patched base is unchanged.
+  The final `.apks` keeps every config-split payload byte-identical (only the
+  Play `stamp-cert-sha256` and the signatures differ) and all four APKs share one
+  debug certificate.
+- Both artifacts are published on the `v1.0.0` release:
+  `kpn-tvplus-adskip.mpp` and `kpn-tvplus-adskip-morphe-splits.apks`. The release
+  notes mark the Morphe bundle as recommended for arm64 Android TV and keep the
+  apktool bundles as fallbacks.
+
+Still open: the on-device smoke test (section 5.7) and the multi-version CI matrix.
+Until that passes, the apktool route (`scratch/build_patched_splits.py`) remains the
+known-good fallback.
+
+---
+
 ## 1. Short answer
 
-The Morphe/Kotlin patch is an **unfinished alternative**, not the shipping patch.
-The working route in this repo is the apktool split build
-(`scratch/build_patched_splits.py` / `build_armeabi_v7a.py`), which produces
-`patch/build/output/kpn-tvplus-adskip-splits.apks`.
+The Morphe/Kotlin patch is now the maintained route: `python
+scratch/build_morphe_splits.py` builds the `.mpp`, patches only `base.apk`, and
+produces `patch/build/output/kpn-tvplus-adskip-morphe-splits.apks`. The earlier
+version of this document described an unfinished alternative; sections 2 and 3 are
+kept as the record of why it did not work before the rewrite.
 
-Nothing in the repo currently produces a patch bundle Morphe can load, and even if
-it did, the fingerprint would not match this app.
+The apktool split build (`scratch/build_patched_splits.py` /
+`build_armeabi_v7a.py`, producing `patch/build/output/kpn-tvplus-adskip-splits.apks`)
+stays documented as the known-good fallback until the Morphe output passes the
+on-device smoke test in section 5.7.
 
 ---
 
@@ -69,30 +112,49 @@ java -jar morphe-cli.jar patch \
 
 ---
 
-## 4. Corrected CLI once a real `.mpp` exists
+## 4. CLI used by the build script
+
+The CLI auto-merges a passed `.apks` bundle, which this app cannot tolerate, so the
+input is the extracted `base.apk` and the split-safe packaging happens afterwards:
 
 ```bash
-java -jar morphe-desktop-*-all.jar patch \
-  -p patches.mpp \
+java -jar morphe-desktop-2.2.0-all.jar patch \
+  -p patch/build/output/kpn-tvplus-adskip.mpp \
   --exclusive \
   -e "KPN TV+ AdSkip & Seek Unlock" \
   --force \
   --continue-on-error \
   -r result.json \
-  -o out.apks \
-  "KPN TV+.apks"
+  -o base-patched.apk \
+  --keystore "$HOME/.android/debug.keystore" \
+  --keystore-password android \
+  --keystore-entry-alias androiddebugkey \
+  --keystore-entry-password android \
+  base.apk
 ```
 
 Notes: `--exclusive -e` selects only this patch; `--force` bypasses version
-verification; `--continue-on-error` lets other patch steps still report;
-`-r result.json` is essential for diagnosing fingerprint misses. If the app has
+verification; `--continue-on-error` lets the tolerant hooks report misses without
+aborting; `-r result.json` records the result. Pass the same `--keystore` arguments
+to the CLI that `scratch/build_morphe_splits.py` uses (the Android debug keystore)
+so the base and the re-signed config splits share one certificate. If the app has
 multi-dex / framework-mixing issues, retry with `--bytecode-mode FULL`.
 
 ---
 
-## 5. What is still needed for a working, cross-version Morphe patch
+## 5. What was needed for a working, cross-version Morphe patch
+
+Each subsection records the requirement and its current status.
 
 ### 5.1 Build and bundle
+
+**Status: done, with one workaround.** A Gradle 8.9 wrapper is committed and
+`./gradlew bundleMpp` emits `kpn-tvplus-adskip.mpp`. Morphe's own patch-build
+plugin and patcher live on GitHub Packages, which returns 401 without
+`read:packages` credentials, so the build compiles against the patcher bundled in
+`morphe-desktop-2.2.0-all.jar` (patcher 2.4.0) and packages the bundle itself. The
+obsolete Java draft in `src/main/java` is excluded from compilation; the smali
+extension is the single source of truth for the hook logic.
 
 - Install JDK 17+ (or 21) and Gradle, or commit a Gradle wrapper so `./gradlew build`
   works on a clean machine.
@@ -108,6 +170,11 @@ multi-dex / framework-mixing issues, retry with `--bytecode-mode FULL`.
 - Publish the `.mpp` as a release asset so users do not have to build it.
 
 ### 5.2 Fingerprints that survive new app versions
+
+**Status: done.** The brittle `MethodFingerprint` objects were replaced by
+tolerant discovery inside `KpnAdSkipPatch.kt` (no `app.revanced` imports). Every
+target is resolved through a preferred name plus shape/type/string hints, and a miss
+logs `[KPN AdSkip] WARNING: ...` instead of failing the patch.
 
 - Rewrite `MainActivityFingerprint` for
   `dispatchKeyEvent(Landroid/view/KeyEvent;)Z`. Do **not** require the class name to
@@ -133,6 +200,11 @@ multi-dex / framework-mixing issues, retry with `--bytecode-mode FULL`.
 
 ### 5.3 Actually inject the hook class
 
+**Status: done.** The six smali classes are assembled into `extensions/kpn.mpe`
+and merged by `extendWith("extensions/kpn.mpe")`. The patch aborts with a clear
+error if `Lsoftware/morphe/kpn/AdSkipHook;` is missing after the merge, and
+`build_morphe_splits.py` re-checks the output DEX before signing.
+
 - Implement step 3: parse `AdSkipHook.smali` into a `ClassDef` (smali parser /
   `DexBuilder`) and add it to the patch's `BytecodeContext`, or ship the hook as a
   compiled DEX and merge it into the target APK.
@@ -143,6 +215,13 @@ multi-dex / framework-mixing issues, retry with `--bytecode-mode FULL`.
 
 ### 5.4 Stable registration point
 
+**Status: done.** `MainActivity.onCreate` calls `registerActivity`, the
+`VideoPlayer` constructor registers the wrapper right after the super call, and
+every assignment to a player-typed field (both
+`androidx/media3/exoplayer/ExoPlayer` and the obfuscated
+`androidx/media3/exoplayer/c`) registers the concrete ExoPlayer. `seekTo(J)V` and
+the lifecycle methods stay hooked as a fallback chain.
+
 - `VideoPlayer.seekTo(J)V` only fires after the first seek. To register the player
   earlier, also hook a constructor or `ExoPlayer` creation path, with a fallback
   chain of fingerprints.
@@ -151,6 +230,14 @@ multi-dex / framework-mixing issues, retry with `--bytecode-mode FULL`.
   versions but needs a stable fingerprint of its own.
 
 ### 5.5 Split packaging
+
+**Status: done.** `scratch/build_morphe_splits.py` implements this end to end:
+extract `base.apk`, patch only that file, re-sign the untouched config splits with
+the same debug certificate, verify that every non-`META-INF` entry of each config
+split is byte-identical (only the Play `stamp-cert-sha256` is dropped when
+re-signing), verify that all four APKs share one certificate, and write
+`kpn-tvplus-adskip-morphe-splits.apks`. It also checks that `resources.arsc` in the
+patched base is unchanged.
 
 - Do not feed the combined `.apks` into Morphe if it auto-merges splits. Extract
   `base.apk`, patch that, keep every config split byte-identical, then reassemble
@@ -163,6 +250,10 @@ multi-dex / framework-mixing issues, retry with `--bytecode-mode FULL`.
 
 ### 5.6 Key bindings across remote variants
 
+**Status: done.** The hook uses numeric literals, keeps the D-pad early return in
+`dispatchKeyEvent`, logs unrecognised key-downs, and keeps Play/Pause → skip ad
+break.
+
 - Android keycodes are stable, so use literals (`90` ⏩, `85` ⏯, ignore `21`/`22`)
   rather than constants introduced at different API levels.
 - Keep the D-pad early-return added in `1ce3311`.
@@ -172,6 +263,11 @@ multi-dex / framework-mixing issues, retry with `--bytecode-mode FULL`.
 - Keep Play/Pause → skip ad break as intended behaviour.
 
 ### 5.7 Testing matrix
+
+**Status: open.** The static checks (output DEX contents, `resources.arsc`
+integrity, split payloads, certificate match) are implemented in
+`build_morphe_splits.py`; the on-device smoke test and the multi-version CI matrix
+still have to be run.
 
 - CI job that, for every supported KPN TV+ version: downloads the base APK, runs
   the patch with `--force --continue-on-error`, asserts from `result.json` that each
@@ -185,6 +281,10 @@ multi-dex / framework-mixing issues, retry with `--bytecode-mode FULL`.
 
 ### 5.8 Documentation
 
+**Status: done.** `patch/README.md` now documents the `.mpp` CLI, the one-command
+split-safe build, and Method B as the known-good fallback, and links back to this
+file.
+
 - Replace README Method A with the current `.mpp` CLI command from §4.
 - Keep Method B (`apktool`) documented and mark it as the known-good route until
   the Morphe path passes the test matrix.
@@ -194,15 +294,20 @@ multi-dex / framework-mixing issues, retry with `--bytecode-mode FULL`.
 
 ## 6. Ordered work plan
 
-1. Add Gradle wrapper + JDK 17 toolchain; fix Android stubs; get `./gradlew build`
+1. ✅ Add Gradle wrapper + JDK 17 toolchain; fix Android stubs; get `./gradlew build`
    running.
-2. Switch to the Morphe patch plugin so the build emits `patches.mpp`.
-3. Implement real hook-class injection and remove the placeholder comment.
-4. Rewrite both fingerprints for `dispatchKeyEvent` and stable ExoPlayer/Media3
+2. ✅ Switch to the Morphe patch plugin so the build emits `patches.mpp`. (Worked
+   around: no GitHub Packages credentials, so the bundle is assembled against the
+   patcher inside the Morphe Desktop CLI jar.)
+3. ✅ Implement real hook-class injection and remove the placeholder comment.
+4. ✅ Rewrite both fingerprints for `dispatchKeyEvent` and stable ExoPlayer/Media3
    matching; make misses non-fatal.
-5. Add split-safe repack + single-cert signing to the Morphe flow.
-6. Publish the `.mpp` and update the README CLI instructions.
-7. Add the multi-version CI matrix and on-device smoke test.
+5. ✅ Add split-safe repack + single-cert signing to the Morphe flow
+   (`scratch/build_morphe_splits.py`).
+6. ✅ Publish the `.mpp` and update the README CLI instructions. (The `.mpp` is
+   built at `patch/build/output/kpn-tvplus-adskip.mpp` and attached to the
+   `v1.0.0` release together with the split-safe `.apks`.)
+7. ⬜ Add the multi-version CI matrix and on-device smoke test.
 
 Definition of done: a clean machine can clone the repo, run one documented command,
 produce `out.apks`, install it on a KPN TV+ box, and use ⏩ for +30 s across all
@@ -212,18 +317,19 @@ tested app versions without losing D-pad or Play/Pause behaviour.
 
 ## 7. Files involved
 
-- `patch/build.gradle.kts`, `patch/settings.gradle.kts` — build plugin, deps, stubs,
-  wrapper.
-- `patch/src/main/kotlin/software/morphe/patches/kpn/KpnAdSkipPatch.kt` — hook
-  injection and soft failures.
-- `patch/src/main/kotlin/software/morphe/patches/kpn/fingerprints/*.kt` — version-
-  tolerant fingerprints.
-- `patch/src/main/java/software/morphe/kpn/AdSkipHook.java` and
-  `patch/smali/software/morphe/kpn/AdSkipHook.smali` — single source of truth for
-  key logic.
-- `patch/README.md` — corrected CLI + known-good route.
-- `scratch/build_patched_splits.py` — split/repack logic to port into the Morphe
-  flow.
+- `patch/build.gradle.kts`, `patch/settings.gradle.kts` — local-jar build, extension
+  assembly and `.mpp` packaging; Gradle 8.9 wrapper in `patch/gradle/`.
+- `patch/src/main/kotlin/software/morphe/patches/kpn/KpnAdSkipPatch.kt` — tolerant
+  discovery, hook injection, soft failures.
+- `patch/smali/software/morphe/kpn/*.smali` — the hook implementation packaged as
+  `extensions/kpn.mpe` (six classes).
+- `patch/src/main/java/software/morphe/kpn/AdSkipHook.java` — older draft, excluded
+  from compilation; do not use it as the reference.
+- `patch/README.md` — current `.mpp` CLI, one-command build, known-good fallback.
+- `scratch/build_morphe_splits.py` — download CLI, build `.mpp`, patch `base.apk`,
+  verify, sign all splits, repack the `.apks`.
+- `scratch/build_patched_splits.py` — apktool fallback (known-good until the
+  on-device test passes).
 
 ## 8. Non-goals / separate concerns
 

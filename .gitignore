@@ -1,1 +1,6 @@
 scratch/apk_build/*
+scratch/__pycache__/
+*.pyc
+patch/.gradle/
+patch/build/*
+!patch/build/output/
