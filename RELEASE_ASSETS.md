@@ -61,6 +61,12 @@ device/build appears, tagged TV or not.
 # re-signs the untouched config splits, writes the .apks)
 python scratch/build_morphe_splits.py
 
+# Any other split bundle (for example the TV app)
+python scratch/build_morphe_splits.py --input "KPN TV TV+.apks" --output tv.apks
+
+# Base already patched elsewhere (for example by Morphe Manager): only re-sign
+python scratch/build_morphe_splits.py --resign-only <folder-with-base-and-splits>
+
 # apktool fallback (known-good, does not use Morphe)
 python scratch/build_patched_splits.py
 ```

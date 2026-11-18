@@ -106,12 +106,36 @@ The script:
 1. downloads the pinned Morphe Desktop CLI
    (`morphe-desktop-2.2.0-all.jar`, cached in `patch/build/morphe/cache/`),
 2. runs Gradle to build `patch/build/output/kpn-tvplus-adskip.mpp`,
-3. extracts `base.apk` from `KPN TV+.apks` and patches **only** that file,
-4. keeps the three config splits untouched and re-signs all four APKs with one
-   debug certificate,
+3. extracts `base.apk` from the input bundle and patches **only** that file,
+4. keeps the config splits untouched and re-signs **every** APK with one debug
+   certificate,
 5. verifies the hook classes and the security bypasses in the output DEX (the
    patch log reports each bypass, e.g. `Security bypass: isRooted -> false`),
 6. writes `patch/build/output/kpn-tvplus-adskip-morphe-splits.apks`.
+
+Any split bundle works, including the TV app's:
+
+```bash
+python scratch/build_morphe_splits.py \
+  --input "KPN TV TV+.apks" \
+  --output patch/build/output/kpn-tv-adskip-tv-splits.apks
+```
+
+Morphe Manager merges an `.apks` before patching, which breaks this app, so let
+the script do the patching and signing instead of importing the archive into
+Manager. Manager can still be used on a single `base.apk`; `--resign-only`
+then combines that patched base with the original config splits:
+
+```bash
+python scratch/build_morphe_splits.py \
+  --resign-only path/to/folder-with-base-and-splits \
+  --output patch/build/output/kpn-tv-adskip-manager-splits.apks
+```
+
+The folder must contain `base.apk` (the patched one) and the untouched
+`split_config.*.apk` files. This is what fixes
+`INSTALL_FAILED_INVALID_APK: signatures are inconsistent`: Manager signs the
+base with its own key, while the splits still carry the Play certificate.
 
 Install:
 
@@ -236,7 +260,11 @@ that emits different codes.
   `Security bypass: ...` lines; if it does not, the plugin's string literals
   changed in that app version and `SECURITY_CHECKS` in `KpnAdSkipPatch.kt` needs
   updating.
-- **`INSTALL_FAILED_INVALID_APK`.** Not all splits are signed with the same
-  certificate; the script verifies this and aborts otherwise.
+- **`INSTALL_FAILED_INVALID_APK: signatures are inconsistent`.** Not all splits
+  are signed with the same certificate. This happens when Manager patched
+  `base.apk` (its own key) and you combined it with the Play-signed config splits.
+  Run the script with `--resign-only <folder>` to re-sign every APK with one
+  certificate, or patch the original bundle with `--input` so the script patches
+  and signs the whole set.
 - **GitHub Packages 401 while building.** Expected on machines without
   `read:packages`; the local-jar build path in section 3.2 avoids the registry.

@@ -1,23 +1,39 @@
 """
 Split-safe Morphe packaging for KPN TV+ (see MORPHE.md, section 5.5).
 
-The Morphe CLI auto-merges an .apks bundle before patching. KPN TV+ must keep its
-splits: the density/locale splits own resource files that base.apk references
-(merging them corrupts the shared resource table -> PlayerView inflate crash).
-This script therefore:
+Morphe Manager and the Morphe CLI auto-merge an `.apks` bundle before patching.
+KPN TV+ must keep its splits: the density/locale splits own resource files that
+base.apk references (merging them corrupts the shared resource table -> PlayerView
+inflate crash). This script therefore:
 
   1. downloads the Morphe Desktop CLI jar (pinned) and builds the patch bundle
      `patch/build/output/kpn-tvplus-adskip.mpp` with Gradle,
-  2. extracts `base.apk` from `KPN TV+.apks` and patches ONLY that file,
+  2. extracts `base.apk` from the input bundle and patches ONLY that file,
   3. keeps every config split untouched (same entries, same bytes per entry) and
-     re-signs all four APKs with one debug certificate,
-  4. bundles the result as `patch/build/output/kpn-tvplus-adskip-morphe-splits.apks`.
+     re-signs every APK with one debug certificate,
+  4. bundles the result as an installable `.apks`.
 
 Usage:
-    python scratch/build_morphe_splits.py [--skip-build] [--mpp PATH]
+    python scratch/build_morphe_splits.py [OPTIONS]
 
-Requirements: JDK 17+ on PATH (or JAVA set), unzip via Python's zipfile, network
-access for the first run (Morphe CLI + Gradle/Kotlin dependencies).
+    --input PATH        Split bundle to patch (default: KPN TV+.apks). Accepts
+                        any .apks/.apkm/.xapk/zip that has base.apk + splits.
+    --output PATH       Where to write the signed bundle
+                        (default: patch/build/output/kpn-tvplus-adskip-morphe-splits.apks).
+    --skip-build        Reuse patch/build/output/kpn-tvplus-adskip.mpp.
+    --mpp PATH          Use an existing patch bundle instead of building one.
+    --resign-only DIR   Do not patch. Take base.apk + split_config.*.apk from DIR,
+                        which is useful when Manager already patched the base, and
+                        only re-sign and repackage them.
+
+Examples:
+    python scratch/build_morphe_splits.py --input "KPN TV+.apks"
+    python scratch/build_morphe_splits.py --input "KPN TV TV+.apks" --output tv.apks
+    python scratch/build_morphe_splits.py --resign-only scratch/manager-output
+
+Requirements: JDK 17+ on PATH (or JAVA set), Android SDK build-tools for
+verification, network access for the first run (Morphe CLI + Gradle/Kotlin
+dependencies).
 """
 import argparse
 import hashlib
@@ -134,15 +150,18 @@ def verify_mpp(mpp):
     )
 
 
-def extract_bundle(work_dir):
-    log("Extracting splits from %s" % os.path.basename(BUNDLE))
+def extract_bundle(bundle_path, work_dir):
+    log("Extracting splits from %s" % os.path.basename(bundle_path))
     if os.path.exists(work_dir):
         shutil.rmtree(work_dir)
     os.makedirs(work_dir)
-    with zipfile.ZipFile(BUNDLE) as bundle:
+    with zipfile.ZipFile(bundle_path) as bundle:
         names = [n for n in bundle.namelist() if n.endswith(".apk")]
         if "base.apk" not in names:
-            raise SystemExit("base.apk not found in %s" % BUNDLE)
+            raise SystemExit(
+                "base.apk not found in %s (found: %s)"
+                % (bundle_path, ", ".join(names) or "no .apk entries")
+            )
         for name in names:
             bundle.extract(name, work_dir)
     base = os.path.join(work_dir, "base.apk")
@@ -152,9 +171,34 @@ def extract_bundle(work_dir):
         if name.startswith(CONFIG_SPLIT_PREFIX) and name.endswith(".apk")
     )
     if not configs:
-        raise SystemExit("no config splits found in %s" % BUNDLE)
+        raise SystemExit("no config splits found in %s" % bundle_path)
     log("Found base.apk + %d config split(s)" % len(configs))
     return base, configs
+
+
+def collect_apks(directory):
+    directory = os.path.abspath(directory)
+    log("Collecting APKs from %s" % directory)
+    if not os.path.isdir(directory):
+        raise SystemExit("not a directory: %s" % directory)
+    names = sorted(
+        name for name in os.listdir(directory)
+        if name.endswith(".apk") and os.path.isfile(os.path.join(directory, name))
+    )
+    if "base.apk" not in names:
+        raise SystemExit(
+            "base.apk not found in %s (found: %s)"
+            % (directory, ", ".join(names) or "no .apk files")
+        )
+    configs = [
+        os.path.join(directory, name)
+        for name in names
+        if name.startswith(CONFIG_SPLIT_PREFIX)
+    ]
+    if not configs:
+        raise SystemExit("no split_config.*.apk files found in %s" % directory)
+    log("Found base.apk + %d config split(s)" % len(configs))
+    return os.path.join(directory, "base.apk"), configs
 
 
 def ensure_debug_keystore():
@@ -326,24 +370,34 @@ def verify_common_certificate(apk_paths, sdk_dir=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input", default=BUNDLE,
+                        help="Split bundle to patch (default: %s)" % os.path.basename(BUNDLE))
+    parser.add_argument("--output", default=FINAL_APKS,
+                        help="Where to write the signed bundle")
     parser.add_argument("--skip-build", action="store_true",
                         help="Reuse patch/build/output/kpn-tvplus-adskip.mpp")
     parser.add_argument("--mpp", help="Path to an existing .mpp bundle")
+    parser.add_argument("--resign-only", metavar="DIR",
+                        help="Skip Morphe and only re-sign base.apk + split_config.*.apk in DIR")
     args = parser.parse_args()
 
     os.makedirs(WORK_DIR, exist_ok=True)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    morphe_jar = ensure_morphe_jar()
-    mpp = args.mpp or (DEFAULT_MPP if args.skip_build else build_mpp(morphe_jar))
-    if not os.path.exists(mpp):
-        raise SystemExit("patch bundle not found: %s" % mpp)
-    verify_mpp(mpp)
+    if args.resign_only:
+        base, configs = collect_apks(args.resign_only)
+        base_to_sign = base
+    else:
+        morphe_jar = ensure_morphe_jar()
+        mpp = args.mpp or (DEFAULT_MPP if args.skip_build else build_mpp(morphe_jar))
+        if not os.path.exists(mpp):
+            raise SystemExit("patch bundle not found: %s" % mpp)
+        verify_mpp(mpp)
 
-    keystore = ensure_debug_keystore()
-    base, configs = extract_bundle(os.path.join(WORK_DIR, "bundle"))
-    patched_base = patch_base(morphe_jar, mpp, base, WORK_DIR, keystore)
-    verify_base_apk(patched_base, base)
+        keystore = ensure_debug_keystore()
+        base, configs = extract_bundle(args.input, os.path.join(WORK_DIR, "bundle"))
+        base_to_sign = patch_base(morphe_jar, mpp, base, WORK_DIR, keystore)
+        verify_base_apk(base_to_sign, base)
 
     log("Signing every split with one certificate")
     signed_dir = os.path.join(WORK_DIR, "signed")
@@ -357,12 +411,12 @@ def main():
     os.makedirs(staged_dir)
 
     staged = []
-    for apk in [patched_base] + configs:
+    for apk in [base_to_sign] + configs:
         signed = sign_apk(apk, signed_dir)
         if apk in configs:
             assert_split_entries_unchanged(apk, signed)
         # Keep the canonical split names inside the bundle.
-        target_name = "base.apk" if apk == patched_base else os.path.basename(apk)
+        target_name = "base.apk" if apk == base_to_sign else os.path.basename(apk)
         target = os.path.join(staged_dir, target_name)
         shutil.copy2(signed, target)
         staged.append(target)
@@ -370,14 +424,19 @@ def main():
 
     verify_common_certificate(staged)
 
-    log("Bundling %s" % os.path.basename(FINAL_APKS))
-    if os.path.exists(FINAL_APKS):
-        os.remove(FINAL_APKS)
-    with zipfile.ZipFile(FINAL_APKS, "w", zipfile.ZIP_DEFLATED) as bundle:
+    output = os.path.abspath(args.output)
+    os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
+    log("Bundling %s" % os.path.basename(output))
+    if os.path.exists(output):
+        os.remove(output)
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as bundle:
         for apk in staged:
             bundle.write(apk, arcname=os.path.basename(apk))
-    log("Done: %s (%d bytes)" % (FINAL_APKS, os.path.getsize(FINAL_APKS)))
-    log("Install with: adb install-multiple base.apk split_config.arm64_v8a.apk ...")
+    log("Done: %s (%d bytes)" % (output, os.path.getsize(output)))
+    log(
+        "Install with: adb install-multiple "
+        + " ".join(os.path.basename(apk) for apk in staged)
+    )
 
 
 if __name__ == "__main__":

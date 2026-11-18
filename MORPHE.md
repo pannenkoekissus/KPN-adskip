@@ -254,9 +254,12 @@ the lifecycle methods stay hooked as a fallback chain.
 extract `base.apk`, patch only that file, re-sign the untouched config splits with
 the same debug certificate, verify that every non-`META-INF` entry of each config
 split is byte-identical (only the Play `stamp-cert-sha256` is dropped when
-re-signing), verify that all four APKs share one certificate, and write
-`kpn-tvplus-adskip-morphe-splits.apks`. It also checks that `resources.arsc` in the
-patched base is unchanged.
+re-signing), verify that all APKs share one certificate, and write an installable
+`.apks`. It also checks that `resources.arsc` in the patched base is unchanged.
+The input bundle is a parameter (`--input`), so the same route works for the TV
+app once its `.apks` is available. `--resign-only DIR` skips patching and re-signs
+a base that Manager already patched together with its original splits, which is
+the fix for `signatures are inconsistent`.
 
 - Do not feed the combined `.apks` into Morphe if it auto-merges splits. Extract
   `base.apk`, patch that, keep every config split byte-identical, then reassemble
