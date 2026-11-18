@@ -375,11 +375,18 @@ val kpnAdSkipPatch = patch(
 ) {
     compatibleWith(
         Compatibility(
-            packageName = "com.kpn.epg",
-            name = "KPN TV+",
-            description = "KPN TV+ Android TV app",
+            packageName = "com.kpn.kpnandroidtv",
+            name = "KPN TV+ Android TV",
+            description = "KPN TV+ on Android TV and the KPN TV+ Box",
             apkFileType = ApkFileType.APKS,
             formFactor = FormFactor.TV,
+        ),
+        Compatibility(
+            packageName = "com.kpn.epg",
+            name = "KPN TV+ (mobile)",
+            description = "KPN TV+ on phones and tablets",
+            apkFileType = ApkFileType.APKS,
+            formFactor = FormFactor.MOBILE,
         ),
     )
 

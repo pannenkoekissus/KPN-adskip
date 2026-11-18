@@ -28,6 +28,9 @@ Done and verified in this repository:
   (`isRooted`, `isRealDevice`, `hasCorrectlyInstalled`, `isJailBroken`,
   `isDevelopmentModeEnable`, `usbDebuggingCheck`). The security bypasses answer
   `MethodChannel.Result` directly, matching the known-good apktool patch.
+  The patch declares both KPN packages: `com.kpn.kpnandroidtv` as the TV app and
+  `com.kpn.epg` as the mobile app. Only the mobile APK (`KPN TV+.apks`) is
+  currently in the repository and covered by the static checks.
 - `scratch/build_morphe_splits.py` implements section 5.5: patch `base.apk` only,
   keep the config splits' payload byte-identical, sign all splits with one
   certificate and write
@@ -45,6 +48,10 @@ Done and verified in this repository:
   apktool bundles as fallbacks.
 
 Still open: the on-device smoke test (section 5.7) and the multi-version CI matrix.
+The Manager import path (DEX entry, both package names) is fixed but not yet
+confirmed in the Manager UI, and no `com.kpn.kpnandroidtv` APK is in the
+repository yet to verify the TV build against.
+
 Until that passes, the apktool route (`scratch/build_patched_splits.py`) remains the
 known-good fallback.
 
@@ -155,6 +162,13 @@ plugin and patcher live on GitHub Packages, which returns 401 without
 `morphe-desktop-2.2.0-all.jar` (patcher 2.4.0) and packages the bundle itself. The
 obsolete Java draft in `src/main/java` is excluded from compilation; the smali
 extension is the single source of truth for the hook logic.
+
+The bundle ships the patch classes twice: as JVM `.class` entries for the CLI and
+as `classes.dex` for Morphe Manager. Manager's `PatchBundle.Loader` rejects a
+bundle with no non-empty `.dex` entry with "Patch bundle is missing dex entries",
+which shows up as an import warning and an empty app list. D8 (R8 on Google's
+Maven repository) produces the DEX in `dexPatches`; the split builder refuses a
+bundle without both entry kinds.
 
 - Install JDK 17+ (or 21) and Gradle, or commit a Gradle wrapper so `./gradlew build`
   works on a clean machine.
@@ -273,6 +287,14 @@ still have to be run.
   the patch with `--force --continue-on-error`, asserts from `result.json` that each
   fingerprint resolved, inspects the output DEX for `AdSkipHook`, verifies split
   integrity, and signs it.
+- Import the `.mpp` into Morphe Manager and confirm both KPN apps appear in the
+  source's app list. Manager reads `classes.dex` from the bundle and rejects the
+  whole source when that entry is missing.
+- Pull `com.kpn.kpnandroidtv` from a TV or the TV+ Box
+  (`adb shell pm path com.kpn.kpnandroidtv`, then `adb pull` each path) and run the
+  same static checks. The two apps share the `com.kpn.tvplusapp.MainActivity` entry
+  point, but the TV build's obfuscation and version differ, so the hint-based
+  discovery still needs to be verified against it.
 - On-device smoke test with `adb logcat -s KPN_AdSkip`: press ⏩ during an ad and
   confirm `KEYDOWN code=90` plus a 30 s jump; press D-pad and ⏯ and confirm no
   jump and normal navigation/playback.

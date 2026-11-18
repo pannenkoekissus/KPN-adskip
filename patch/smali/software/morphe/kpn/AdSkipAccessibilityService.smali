@@ -71,8 +71,13 @@
     move-result-object v1
     const-string v2, "com.kpn.epg"
     invoke-virtual {v1, v2}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
-    move-result v1
-    if-eqz v1, :not_ours
+    move-result v3
+    if-nez v3, :ours
+    const-string v2, "com.kpn.kpnandroidtv"
+    invoke-virtual {v1, v2}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+    move-result v3
+    if-eqz v3, :not_ours
+    :ours
 
     new-instance v1, Ljava/lang/StringBuilder;
     invoke-direct {v1}, Ljava/lang/StringBuilder;-><init>()V

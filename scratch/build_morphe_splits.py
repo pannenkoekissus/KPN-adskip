@@ -106,6 +106,34 @@ def build_mpp(morphe_jar):
     return DEFAULT_MPP
 
 
+def verify_mpp(mpp):
+    """A bundle has to satisfy both loaders: the CLI reads .class files, Manager
+    reads a DEX and rejects the bundle when there is no non-empty .dex entry."""
+    log("Verifying patch bundle")
+    with zipfile.ZipFile(mpp) as bundle:
+        entries = bundle.infolist()
+        dex_entries = [entry for entry in entries if entry.filename.lower().endswith(".dex")]
+        if not dex_entries:
+            raise SystemExit("patch bundle has no DEX entry; Morphe Manager cannot load it")
+        empty = [entry.filename for entry in dex_entries if entry.file_size <= 0]
+        if empty:
+            raise SystemExit("patch bundle has empty DEX entries: %s" % ", ".join(empty))
+        class_entries = [entry.filename for entry in entries if entry.filename.endswith(".class")]
+        if not class_entries:
+            raise SystemExit("patch bundle has no JVM classes; the Morphe CLI cannot load it")
+        extensions = [
+            entry.filename
+            for entry in entries
+            if entry.filename.startswith("extensions/") and entry.filename.endswith(".mpe")
+        ]
+        if not extensions:
+            raise SystemExit("patch bundle has no extension under extensions/")
+    log(
+        "Patch bundle carries %d DEX entry, %d classes and %d extension(s)"
+        % (len(dex_entries), len(class_entries), len(extensions))
+    )
+
+
 def extract_bundle(work_dir):
     log("Extracting splits from %s" % os.path.basename(BUNDLE))
     if os.path.exists(work_dir):
@@ -310,6 +338,7 @@ def main():
     mpp = args.mpp or (DEFAULT_MPP if args.skip_build else build_mpp(morphe_jar))
     if not os.path.exists(mpp):
         raise SystemExit("patch bundle not found: %s" % mpp)
+    verify_mpp(mpp)
 
     keystore = ensure_debug_keystore()
     base, configs = extract_bundle(os.path.join(WORK_DIR, "bundle"))

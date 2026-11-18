@@ -1,19 +1,32 @@
 # KPN TV+ AdSkip & Seek Unlock - patch guide
 
-Version-independent patch implementation for **KPN TV+ (`com.kpn.epg`)** on Android /
-Android TV. It maps the remote's fast-forward key to a +30 s seek, makes ad breaks
-skippable, and keeps D-pad navigation and Play/Pause working as before.
+Version-independent patch implementation for **KPN TV+** on Android TV
+(`com.kpn.kpnandroidtv`, the KPN TV+ Box / smart-TV app) and on phones and
+tablets (`com.kpn.epg`). It maps the remote's fast-forward key to a +30 s seek,
+makes ad breaks skippable, and keeps D-pad navigation and Play/Pause working as
+before.
 
-> **Status (Morphe route):** the Kotlin patch now compiles into a loadable
-> `.mpp` bundle and the split-safe builder produces
+> **Status (Morphe route):** the Kotlin patch compiles into a loadable
+> `.mpp` bundle that works in both the Morphe CLI and Morphe Manager (the bundle
+> carries `classes.dex` next to the JVM `.class` entries, because Manager cannot
+> load `.class` files), and the split-safe builder produces
 > `patch/build/output/kpn-tvplus-adskip-morphe-splits.apks`. The patch has been
 > verified in the output DEX (`AdSkipHook`, `dispatchKeyEvent`, `seekTo`, the
 > ExoPlayer ad-seek guard, the IMA skippable override and the Flutter security
-> checks are all present). On-device smoke testing is still pending, so Method B
-> (apktool) remains the documented known-good fallback. See
-> [MORPHE.md](../MORPHE.md) for the history, the remaining test matrix, and the
-> two blockers that were worked around (GitHub Packages credentials,
-> auto-merging `.apks` input).
+> checks are all present). The TV build is not yet smoke-tested against
+> `com.kpn.kpnandroidtv`; Method B (apktool) remains the documented known-good
+> fallback. See [MORPHE.md](../MORPHE.md) for the history and the remaining test
+> matrix.
+
+### Which app should I patch?
+
+| Device | Package | APK |
+| :--- | :--- | :--- |
+| Android TV / KPN TV+ Box | `com.kpn.kpnandroidtv` | split bundle (`.apks`) |
+| Phone / tablet | `com.kpn.epg` | split bundle (`.apks`) |
+
+Do not use `com.kpn.epg` for a TV: it is the mobile app, even though it shares
+the `com.kpn.tvplusapp.MainActivity` entry point with the TV build.
 
 ---
 
@@ -123,6 +136,11 @@ cd patch
 `MORPHE_DESKTOP_JAR` can be used instead of `-PmorpheDesktopJar`. The `.mpp`
 declares `Patcher-Version: 2.4.0`, matching the patcher inside the CLI.
 
+The bundle contains the compiled patch classes twice: as JVM `.class` files (used
+by the CLI) and as `classes.dex` (used by Morphe Manager on Android, which
+rejects a bundle without a DEX entry). `bundleMpp` runs D8 from Google's Maven
+repository to produce the DEX, so the first build needs network access.
+
 ### 3.3 Manual patching (single APK)
 
 Do **not** pass the original `.apks` bundle to the CLI: it merges the splits and
@@ -197,6 +215,14 @@ that emits different codes.
 
 ## 6. Troubleshooting
 
+- **Morphe imports the `.mpp` with a warning but the KPN app never appears.**
+  The bundle has no `classes.dex` entry. Morphe Manager cannot load JVM `.class`
+  files and rejects the whole source. Rebuild with `./gradlew bundleMpp` or
+  `scratch/build_morphe_splits.py`; both now dex the patch classes and refuse a
+  bundle without the dex entry.
+- **The app list shows KPN but not the app you have installed.** KPN ships
+  `com.kpn.kpnandroidtv` for Android TV and `com.kpn.epg` for phones/tablets. Pick
+  the APK that matches the package, not the device form factor.
 - **Patch log says a target was skipped.** The `[KPN AdSkip] WARNING: ...` lines
   name the missing class/method; the rest of the hooks still apply. Run with
   `--force --continue-on-error` and check `result.json`.
